@@ -1,0 +1,2203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NYC Substations</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=2">
+<style>
+  :root { --ink: #000; --on: #1da54a; --off: #e0281e; --unk: #9a9a9a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #fff; color: var(--ink); overflow: hidden;
+    font-family: Helvetica, Arial, sans-serif; }
+  #map { position: fixed; inset: 0; }
+  #canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #map > svg { position: absolute; inset: 0; }
+  #map svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; }
+  #map svg.online { cursor: pointer; }
+  #map svg.dragging { cursor: grabbing; }
+  #map svg.dragging .sub { pointer-events: none; }
+  .el { fill: none; pointer-events: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 0.1 5; vector-effect: non-scaling-stroke; }
+  .sub { cursor: pointer; }
+  #legend .count { color: #777; font-variant-numeric: tabular-nums; margin-left: 4px; }
+  .sub .hit { fill: transparent; }
+  .sub .body { fill: #fff; stroke-width: 1.4; stroke-linejoin: miter; }
+  .sub .detail { fill: none; stroke-width: 0.9; }
+  .sub .dot { stroke: #fff; stroke-width: 1; }
+  .sub:hover .body, .sub.sel .body { stroke-width: 2.4; }
+  /* the clicked substation (or one reached with the keyboard) gets a black ring instead of the browser's focus box */
+  .sub:focus { outline: none; }
+  .sub .ring { fill: none; stroke: #000; stroke-width: 1.6; display: none; pointer-events: none; }
+  .sub.sel .ring, .sub:focus-visible .ring { display: inline; }
+  .dot.on { fill: var(--on); } .dot.off { fill: var(--off); } .dot.unknown { fill: var(--unk); }
+  /* filled icons (ICON_STYLE 'filled'): a white edge keeps them apart from a line of the same colour */
+  .sub .fbody { stroke: #fff; stroke-width: 1.2; stroke-linejoin: miter; }
+  /* a building substation snapped to its tax lot (closest zoom) */
+  .sub .lotp { stroke: #000; stroke-width: 1.2px; stroke-linejoin: miter; vector-effect: non-scaling-stroke; }
+  .sub:hover .lotp, .sub.sel .lotp, .sub.hl .lotp { stroke-width: 2.6px; }
+  .sub.snapped .ring { display: none !important; }
+  .sub.snapped .hit, .sub.snapped .ico { pointer-events: none; }
+  .sub:hover .fbody, .sub.sel .fbody, .sub.hl .fbody { stroke: #000; stroke-width: 1.3; }
+  .sub .stat { stroke: none; }
+  .stat.on { fill: var(--on); } .stat.off { fill: var(--off); } .stat.unknown { fill: var(--unk); } .stat.blank { fill: #fff; }
+  .sub .statx { fill: none; stroke-linecap: butt; }
+  .sub .statx.under { stroke: #fff; stroke-width: 3.4; }
+  .statx.on { stroke: var(--on); stroke-width: 1.9; } .statx.off { stroke: var(--off); stroke-width: 1.9; }
+  .statx.unknown { stroke: var(--unk); stroke-width: 1.9; } .statx.blank { stroke: #fff; stroke-width: 1.9; }
+
+  /* line summary shown top left while a line is isolated from the legend */
+  #lineinfo { position: absolute; left: 16px; top: 16px; width: min(300px, calc(100% - 32px)); background: #fff; border: 1px solid #000;
+    display: none; z-index: 3; font-size: 12px; }
+  #lineinfo.show { display: block; }
+  #lineinfo header { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 10px; border-bottom: 1px solid #000; }
+  #lineinfo header .ttl { flex: 1; font: 13px "Courier New", Courier, monospace; }
+  #lineinfo header .bullets { display: flex; gap: 2px; }
+  #lineinfo header button { border: 0; background: none; font: 18px/1 Helvetica, Arial, sans-serif; cursor: pointer; padding: 0 4px; }
+  #lineinfo header button:hover { color: #0000ee; }
+  #lineinfo table { border-collapse: collapse; width: 100%; }
+  #lineinfo td { border-top: 1px solid #000; padding: 4px 7px; vertical-align: top; }
+  #lineinfo tr:first-child td { border-top: 0; }
+  #lineinfo td.k { width: 62%; font-weight: bold; }
+  #lineinfo td.v { font-variant-numeric: tabular-nums; }
+  #lineinfo td.v .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+  #lineinfo tr.sub td { font-weight: normal; padding-left: 18px; }
+  #lineinfo tr.sub td.v { padding-left: 7px; }
+
+  #legend { position: absolute; right: 16px; bottom: 16px; font-size: 11px; line-height: 1.25; background: #fff;
+    padding: 10px 12px; border: 1px solid #000; max-width: 230px; max-height: calc(100% - 140px); overflow: auto; }
+  #legend h4 { margin: 8px 0 4px; font-size: 11px; font-weight: bold; }
+  #legend h4 .count { font-weight: normal; }
+  #legend h4[data-layer] { cursor: pointer; user-select: none; }
+  #legend h4[data-layer]:hover { color: #0000ee; }
+  #legend h4.off { color: #999; text-decoration: line-through; }
+  #legend .layeroff { opacity: 0.35; }
+  #legend .row.subrow { cursor: pointer; }
+  #legend .row.subrow:hover { background: #f1f1f1; }
+  #legend .toggle { display: flex; justify-content: space-between; gap: 16px; cursor: pointer; font-weight: bold; border: 0; background: none;
+    padding: 0; width: 100%; font: bold 11px Helvetica, Arial, sans-serif; color: #000; }
+  #legend .toggle:hover { color: #0000ee; }
+  #legend.closed .content { display: none; }
+  #legend .chips { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+  #legend .chips .row { margin: 1px 0; gap: 5px; }
+  #legend .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+  #legend svg { flex: none; cursor: default; width: 26px; height: 14px; }
+  #legend .note { color: #555; margin-top: 8px; }
+
+  #tip { position: fixed; pointer-events: none; background: #fff; border: 1px solid #000; font-size: 12px;
+    padding: 3px 6px; display: none; z-index: 5; white-space: nowrap; }
+  #tip div + div { margin-top: 3px; }
+  #tip .withbullet { display: flex; align-items: center; gap: 6px; }
+  .bullet { display: inline-block; box-sizing: border-box; width: 18px; height: 18px; border-radius: 50%; flex: none; vertical-align: middle;
+    color: #fff; font: bold 11px/18px Helvetica, Arial, sans-serif; text-align: center; letter-spacing: 0; padding: 0; }
+  .bullet.wide { width: auto; padding: 0 6px; border-radius: 9px; font-size: 9px; }
+  #legend .chips .row { cursor: default; gap: 3px; padding: 1px 2px; }
+  #legend .hoverable { cursor: pointer; }
+  #legend .row.iso { background: #e2e2e2; box-shadow: inset 2px 0 0 #000; }
+  #legend .bullet.svc.iso { box-shadow: 0 0 0 2px #fff, 0 0 0 3px #000; }
+  #legend .reset { display: none; margin: 6px 0 0; padding: 2px 6px; font: inherit; border: 1px solid #000; background: #fff; cursor: pointer; }
+  #legend .reset:hover { background: #000; color: #fff; }
+  #legend.isolating .reset { display: inline-block; }
+  .sub.dim { display: none; }                         /* isolating a line hides everything else */
+  .sub.hl .body { stroke-width: 2.6; }
+  #legend .chips.cos { margin-top: 4px; }
+  #legend .hoverable:hover { background: #f1f1f1; }
+  #legend .bullet.svc:hover { box-shadow: 0 0 0 2px #fff, 0 0 0 3px #000; }
+  #svg { shape-rendering: geometricPrecision; text-rendering: geometricPrecision; }
+
+  #sheet { position: absolute; left: 16px; top: 16px; width: min(520px, calc(100% - 76px)); max-height: calc(100% - 32px);
+    background: #fff; border: 1px solid #000; display: none; flex-direction: column; z-index: 4; }
+  #sheet.show { display: flex; }
+  #sheet header { display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 10px; border-bottom: 1px solid #000; }
+  #sheet header .ttl { flex: 1; font: 13px "Courier New", Courier, monospace; }
+  #sheet header button { border: 0; background: none; font: 18px/1 Helvetica, Arial, sans-serif; cursor: pointer; padding: 0 4px; }
+  #sheet header button:hover { color: #0000ee; }
+  #sheet .scroll { overflow: auto; }
+  #sheet table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  #sheet th, #sheet td { border: 1px solid #000; padding: 4px 7px; vertical-align: top; text-align: left; }
+  #sheet td.k { width: 34%; font-weight: bold; }
+  #sheet .unsure { color: #d0021b; }
+  /* values link to the source they came from; extra sources as small numbers */
+  #sheet td.v a.src { color: inherit; text-decoration: none; }
+  #sheet td.v a.src:hover { color: #0000ee; }
+  #sheet td.v a.src .unsure { color: #d0021b; }
+  #sheet td.v sup a { color: #777; text-decoration: none; margin-left: 2px; font-size: 9px; }
+  #sheet td.v sup a:hover { color: #0000ee; }
+  /* the substation's rectified front elevation (building) or hatch plan (vault), beside the table */
+  #photo { position: absolute; left: calc(16px + min(520px, calc(100% - 76px)) + 8px); top: 16px; width: min(340px, calc(100% - 820px));   /* stays clear of the legend on the right */
+    max-height: calc(100% - 32px); background: #fff; border: 1px solid #000; display: none; flex-direction: column; z-index: 4; }
+  #photo.show { display: flex; }
+  #photo.noimg .img, #photo.noimg .cap { display: none !important; }
+  #photo.noimg .albumbtn { margin-top: 8px; }
+  #photo header { padding: 7px 10px; border-bottom: 1px solid #000; font: 13px "Courier New", Courier, monospace; }
+  #sheet header, #photo header { box-sizing: border-box; height: 34px; display: flex; align-items: center; flex: none; }   /* same height title rows */
+  /* the drawn elevation (when there is one) sits above the photo; both shrink so the panel never runs past the window */
+  #photo .img, #photo .dimg { overflow: hidden; background: #f4f4f4; display: flex; justify-content: center; align-items: center; flex: none; }
+  #photo .dimg { background: #fff; }
+  #photo .drw { display: none; flex-direction: column; flex: none; border-bottom: 1px solid #c9c9c9; }
+  #photo.hasdrw .drw { display: flex; }
+  #photo .drw .lbl { display: none; }   /* the 'Drawn elevation' label was taken off (13 Nov 2026) */
+  #photo img { display: block; max-width: 100%; width: auto; height: auto; cursor: zoom-in; }   /* heights set by fitPhoto() */
+  #photo .cap { flex: none; font-size: 11px; color: #555; padding: 6px 10px; border-top: 1px solid #c9c9c9; }
+  #photo .cap .unsure { color: #d0021b; }
+  #photo .none { font-size: 12px; color: #555; padding: 14px 10px; }
+  /* narrow screens: the photo panel sits under the table, inside the record's scroll, so one scroll goes table then images */
+  #photo.inline { position: static; width: auto; max-height: none !important; border: 0; border-top: 1px solid #000; z-index: auto; }
+  #photo.inline img { max-height: none !important; }
+  @media (max-width: 1150px) { #sheet header { height: auto; min-height: 34px; } #sheet td { overflow-wrap: anywhere; } }
+  #photo .albumbtn { flex: none; margin: 0 10px 8px; align-self: flex-start; font: 11px Helvetica, Arial, sans-serif; border: 1px solid #000; background: #fff; padding: 3px 8px; cursor: pointer; }
+  #photo .albumbtn:hover { background: #000; color: #fff; }
+  /* archival photo album, oldest first */
+  :is(#album, #review) { position: fixed; inset: 0; background: rgba(0,0,0,.88); z-index: 20; display: none; flex-direction: column; color: #fff; font: 12px Helvetica, Arial, sans-serif; }
+  :is(#album, #review).show { display: flex; }
+  :is(#album, #review) header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+  :is(#album, #review) header .ttl { flex: 1; font: 13px "Courier New", Courier, monospace; }
+  :is(#album, #review) button { font: inherit; color: #fff; background: none; border: 1px solid #fff; padding: 3px 9px; cursor: pointer; }
+  :is(#album, #review) button:hover { background: #fff; color: #000; }
+  :is(#album, #review) .stage { flex: 1; display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 0; padding: 0 14px; }
+  :is(#album, #review) .stage img { max-width: calc(100% - 120px); max-height: 100%; object-fit: contain; background: #222; }
+  :is(#album, #review) .stage button { font-size: 22px; padding: 6px 12px; }
+  :is(#album, #review) .cap { padding: 8px 14px; text-align: center; line-height: 1.4; }
+  :is(#album, #review) .cap a { color: #9cf; }
+  :is(#album, #review) .cap .unsure { color: #ff8a8a; }
+  :is(#album, #review) .strip { display: flex; gap: 6px; overflow-x: auto; padding: 8px 14px 14px; }
+  :is(#album, #review) .strip img { height: 64px; opacity: .55; cursor: pointer; border: 2px solid transparent; }
+  :is(#album, #review) .strip img.cur { opacity: 1; border-color: #fff; }
+  :is(#album, #review) .strip figure { margin: 0; text-align: center; font-size: 10px; color: #ccc; }
+  /* bottom left: show only the substations still waiting for their photo */
+  #todo { position: absolute; left: 16px; bottom: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; z-index: 3; font-size: 11px; }   /* stacked (13 Nov 2026) */
+  /* round buttons with just the count (14 Nov 2026); their names are in the hover title */
+  #todo button { font: 12px/1 Helvetica, Arial, sans-serif; border: 1px solid #000; background: #fff; cursor: pointer;
+    width: 32px; height: 32px; padding: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  #todo button:hover { background: #f1f1f1; }
+  #todo button.on { background: #000; color: #fff; }
+  #sheet tr > :first-child { border-left: 0; } #sheet tr > :last-child { border-right: 0; }
+  #sheet tr:last-child > * { border-bottom: 0; }   /* the panel's own border closes the table (else 2px at the bottom) */
+  /* Title rows in the manner of the 1970 subway sign system (Unimark: Vignelli and Noorda): a black band, white
+     Helvetica, with only a thin black margin all round the lettering (13 Nov 2026: the white top line and the
+     deeper top margin were taken out, and the margins cut to 3px top and bottom, 6px at the sides) */
+  #sheet header, #photo header, #lineinfo header, #legend .toggle {
+    background: #000; color: #fff; border-bottom: 0; padding: 3px 6px; }
+  #sheet header .ttl, #lineinfo header .ttl, #photo header, #legend .toggle { font: bold 14px/1.15 "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  #sheet header button, #lineinfo header button { line-height: 1; }
+  #sheet header, #photo header { height: auto; min-height: 0; }
+  #sheet header button, #lineinfo header button { color: #fff; }
+  #sheet header button:hover, #lineinfo header button:hover, #legend .toggle:hover { color: #fccc0a; }
+  #legend .toggle { width: calc(100% + 24px); margin: -10px -12px 8px; padding-left: 6px; padding-right: 6px; align-items: center; }
+  #legend.closed .toggle { margin-bottom: -10px; }
+
+
+  /* completed elevations, one by one, each to be marked good or bad (bottom-left button) */
+  #review .tally { font-size: 12px; color: #ccc; }
+  #review .verdict { display: flex; justify-content: center; gap: 10px; padding: 0 14px 8px; }
+  #review .verdict button { padding: 6px 14px; font-size: 13px; }
+  #review .verdict .good.on { background: #1da54a; border-color: #1da54a; color: #fff; }
+  #review .verdict .bad.on { background: #e0281e; border-color: #e0281e; color: #fff; }
+  #review .strip figure { position: relative; }
+  #review .strip figure.good img { border-color: #1da54a; opacity: 1; }
+  #review .strip figure.bad img { border-color: #e0281e; opacity: 1; }
+  #review .strip img.cur { outline: 2px solid #fff; outline-offset: 1px; }
+  #review .cap a { cursor: pointer; text-decoration: underline; }
+  /* live trains (merged from 1_website_live, 14 Nov 2026): their own canvas between the map's canvas and the substation
+     icons, and a status box at the top right (live.js) */
+  #trains { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+  #livestatus { position: absolute; right: 16px; top: 16px; z-index: 3; font: 11px Helvetica, Arial, sans-serif; background: #fff;
+    border: 1px solid #000; padding: 3px 7px; }
+</style>
+</head>
+<body>
+<div id="map">
+  <canvas id="canvas"></canvas>
+  <svg id="svg" role="img" aria-label="Map of New York City transit substations"><g id="g-subs"></g></svg>
+  <div id="lineinfo" role="region" aria-label="Isolated line"><header><span class="bullets"></span><span class="ttl"></span><button aria-label="Show all lines" title="Show all lines">×</button></header><table><tbody></tbody></table></div>
+  <div id="legend"></div>
+  <div id="sheet" role="dialog" aria-label="Substation record">
+    <header><span class="ttl"></span><button aria-label="Close">×</button></header>
+    <div class="scroll"><table><tbody></tbody></table></div>
+  </div>
+  <div id="photo" role="region" aria-label="Elevation photo"><header></header><div class="drw"><div class="lbl"></div><div class="dimg"></div></div><div class="img"></div><div class="cap"></div></div>
+  <div id="todo" role="group" aria-label="Photos still to make"></div>
+  <div id="review" role="dialog" aria-label="Completed elevations"><header><span class="ttl">Completed elevations</span><span class="tally"></span><button class="save" title="Download the list of images marked good or bad, for the research folder">Save list</button><button class="close" aria-label="Close">×</button></header>
+    <div class="stage"><button class="prev" aria-label="Previous">‹</button><img alt=""><button class="next" aria-label="Next">›</button></div>
+    <div class="cap"></div>
+    <div class="verdict"><button class="good" title="Key: G">✓ Good</button><button class="bad" title="Key: B">✗ Bad or too blurry</button></div>
+    <div class="strip"></div>
+  </div>
+  <div id="album" role="dialog" aria-label="Archival photos"><header><span class="ttl"></span><button class="close" aria-label="Close album">×</button></header>
+    <div class="stage"><button class="prev" aria-label="Earlier photo">‹</button><img alt=""><button class="next" aria-label="Later photo">›</button></div>
+    <div class="cap"></div><div class="strip"></div></div>
+</div>
+<div id="tip"></div>
+
+<script src="map-data.js?v=101"></script>
+<script src="map-lines.js?v=10"></script>
+<script>
+const DATA = window.MAP_DATA;
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+
+/* Official MTA line colours */
+const SERVICE_COLOR = {
+  '1':'#EE352E','2':'#EE352E','3':'#EE352E', '4':'#00933C','5':'#00933C','5 Peak':'#00933C','6':'#00933C', '7':'#B933AD',
+  'A':'#0039A6','C':'#0039A6','E':'#0039A6', 'B':'#FF6319','D':'#FF6319','F':'#FF6319','M':'#FF6319', 'G':'#6CBE45',
+  'J':'#996633','Z':'#996633', 'L':'#A7A9AC', 'N':'#FCCC0A','Q':'#FCCC0A','R':'#FCCC0A','W':'#FCCC0A',
+  'SIR':'#0039A6'
+};
+const GROUP_COLOR = { '123':'#EE352E', '456':'#00933C', '7':'#B933AD', 'ACE':'#0039A6', 'BDFM':'#FF6319', 'G':'#6CBE45',
+  'JZ':'#996633', 'L':'#A7A9AC', 'NQRW':'#FCCC0A', 'SIR':'#0039A6', 'EL':'#E0457B' };
+const UNCONFIRMED = '#b4b4b4';
+const STATUS_LABEL = { on: 'In use', off: 'Not in use', unknown: 'Status not confirmed' };
+
+/* Projection: plain equirectangular, scaled for NYC's latitude */
+const LON0 = -74.262, LAT0 = 40.920, K = Math.cos(40.7 * Math.PI / 180), S = 2000;
+const px = (lon, lat) => [(lon - LON0) * K * S, (LAT0 - lat) * S];
+
+/* ---------- Geometry ----------
+   The coast and all routes are painted on a canvas, redrawn in full on every pan/zoom frame, so nothing is
+   ever shown stretched or blurry while the browser catches up. Only the substation icons are SVG elements. */
+const BOUNDS = { w: (-73.695 - LON0) * K * S, h: (LAT0 - 40.49) * S };
+const svg = document.getElementById('svg'), gSubs = document.getElementById('g-subs');
+const LOD = [{ maxK: 1.1, tol: 0.6 }, { maxK: 2.5, tol: 0.28 }, { maxK: 8, tol: 0.09 }, { maxK: 26, tol: 0.028 }, { maxK: Infinity, tol: 0 }];
+function simplify(pts, tol) {
+  if (!tol || pts.length < 3) return pts;
+  const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
+  const stack = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop(), ax = pts[a][0], ay = pts[a][1], dx = pts[b][0] - ax, dy = pts[b][1] - ay, len = dx * dx + dy * dy;
+    let worst = 0, at = -1;
+    for (let i = a + 1; i < b; i++) {
+      const t = len ? Math.max(0, Math.min(1, ((pts[i][0] - ax) * dx + (pts[i][1] - ay) * dy) / len)) : 0;
+      const d = Math.hypot(pts[i][0] - ax - t * dx, pts[i][1] - ay - t * dy);
+      if (d > worst) { worst = d; at = i; }
+    }
+    if (worst > tol) { keep[at] = 1; stack.push([a, at], [at, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+const distToSeg = (x, y, a, b) => {
+  const dx = b[0] - a[0], dy = b[1] - a[1], len = dx * dx + dy * dy;
+  const t = len ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / len)) : 0;
+  return Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy);
+};
+
+/* Routes: each keeps full-resolution points; per zoom level they are simplified once and cut into short
+   runs with a bounding box, so only runs near the window are drawn or hit-tested. */
+const RUN = 40, routes = [];
+function addRoute(rawParts, color, label, dashed, service) {
+  const parts = rawParts.map(r => {
+    const sparse = r.map(p => px(p[0], p[1])); if (!dashed) return sparse;
+    const pts = [sparse[0]];                       /* subdivide hand-traced routes so their dots can be culled too */
+    for (let i = 1; i < sparse.length; i++) {
+      const a = sparse[i - 1], b = sparse[i], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 6);
+      for (let j = 1; j <= n; j++) pts.push([a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n]);
+    }
+    return pts;
+  });
+  const key = dashed ? 'EL' : keyOf(service);
+  const co = dashed ? (/Second|Third|Sixth|Ninth/.test(label) ? 'IRT' : 'BMT') : KEY_CO[key];   /* the Manhattan Railway els were run by the IRT, the Brooklyn els by the BRT/BMT */
+  routes.push({ parts, color, label, dashed, service, key, co, bullet: dashed ? '' : service, cache: {} });
+}
+function runsOf(route, level, variant) {
+  /* with a variant: the strands to draw (merged per colour, with lane offsets); without: the service's whole
+     route, for hover hit-testing */
+  const slot = (variant || 'hit') + level;
+  if (!route.cache[slot]) {
+    const runs = [], parts = variant ? variants[variant].strands[routes.indexOf(route)] : route.parts;
+    for (const part of parts) {
+      /* simplify each stretch that keeps one lane, so lane changes survive; dotted routes stay dense so
+         their off-screen dots can be skipped */
+      const kept = [];
+      for (let i = 0; i < part.length - 1;) {
+        let j = i + 1; while (j < part.length - 1 && part[j][2] === part[i][2] && part[j].sk === part[i].sk) j++;
+        const piece = simplify(part.slice(i, j + 1), route.dashed ? 0 : (LOD[level].tol || 0.02));
+        for (let n = kept.length ? 1 : 0; n < piece.length; n++) kept.push(piece[n]);
+        i = j;
+      }
+      const pts = kept.map(q => [q[0], q[1], q.ax || 0, q.ay || 0, q.svcs, q]);
+      for (let i = 0; i < pts.length - 1; i += RUN) {
+        const run = pts.slice(i, i + RUN + 1);
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const [x, y] of run) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+        runs.push({ x0, y0, x1, y1, pts: run });
+      }
+    }
+    route.cache[slot] = runs;
+  }
+  return route.cache[slot];
+}
+/* legend line groups and the historic companies that built them */
+const GROUP_KEYS = ['123', '456', '7', 'ACE', 'BDFM', 'G', 'JZ', 'L', 'NQRW'];
+const keyOf = svc => svc === 'SIR' ? 'SIR' : GROUP_KEYS.find(k => k.includes(svc)) || svc;
+const KEY_CO = { '123': 'IRT', '456': 'IRT', '7': 'IRT', 'ACE': 'IND', 'BDFM': 'IND', 'G': 'IND', 'JZ': 'BMT', 'L': 'BMT', 'NQRW': 'BMT' };
+const subCos = d => new Set(d.lines.map(k => k === 'EL' ? (/Manhattan Railway/i.test(d.name) ? 'IRT' : 'BMT') : KEY_CO[k]).filter(Boolean));
+/* a legend selection: { key } a colour group, { els } all demolished els, { elColor } one el (hover), { co } a company */
+const routeIn = (r, sel) => sel.co ? r.co === sel.co : sel.els ? !!r.dashed : sel.elColor ? !!r.dashed && r.color === sel.elColor : !r.dashed && r.key === sel.key;
+/* layers switched off by clicking a legend title: substations, subway lines, demolished els */
+const hidden = { subs: false, subway: false, els: false };
+const routeHidden = r => r.dashed ? hidden.els : hidden.subway;
+let subIso = null;                                      /* substation legend row clicked: only that group is shown */
+const subHidden = d => hidden.subs || (!!subIso && !subIso(d));
+const termIn = (t, sel) => sel.co ? t.co === sel.co : !sel.els && !sel.elColor && t.key === sel.key;
+const subIn = (d, sel) => sel.co ? subCos(d).has(sel.co) : sel.els || sel.elColor ? d.lines.includes('EL') : d.lines.includes(sel.key);
+const COMPANY = s => '1234567'.includes(s[0]) ? 'IRT' : 'ACEBDFG'.includes(s) ? 'IND' : s === 'SIR' ? 'Staten Island Rapid Transit (B&O)' : 'BMT';
+const EL_COMPANY = n => /Second|Third|Sixth|Ninth/.test(n) ? 'Manhattan Railway Co., later IRT' : 'BRT, later BMT';
+for (const e of DATA.els) addRoute(e.segs, e.color, e.name + ', ' + e.years + ' (demolished) · ' + EL_COMPANY(e.name), true);
+/* Some services arrive as dozens of separate track pieces (yard leads, sidings, both running tracks).
+   Collapse such a service into one centreline: order every point along the line's long axis and average
+   the points in each short step. */
+function singleLine(segs) {
+  const pts = [];
+  for (const seg of segs) for (let i = 1; i < seg.length; i++) {
+    const a = px(seg[i - 1][0], seg[i - 1][1]), b = px(seg[i][0], seg[i][1]), n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1])));
+    for (let j = 0; j <= n; j++) pts.push([a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n]);
+  }
+  const far = from => pts.reduce((best, q) => Math.hypot(q[0] - from[0], q[1] - from[1]) > Math.hypot(best[0] - from[0], best[1] - from[1]) ? q : best, from);
+  const A = far(far(pts[0])), B = far(A), len = Math.hypot(B[0] - A[0], B[1] - A[1]), ux = (B[0] - A[0]) / len, uy = (B[1] - A[1]) / len;
+  const BIN = 3, bins = [];
+  for (const q of pts) { const i = Math.floor(((q[0] - A[0]) * ux + (q[1] - A[1]) * uy) / BIN); (bins[i] = bins[i] || [0, 0, 0]); bins[i][0] += q[0]; bins[i][1] += q[1]; bins[i][2]++; }
+  const line = [A, ...bins.filter(Boolean).map(b => [b[0] / b[2], b[1] / b[2]]), B];
+  return [line.map(q => [q[0] / (K * S) + LON0, LAT0 - q[1] / S])];
+}
+if (!window.MAP_LINES) for (const l of DATA.lines) if (l.segs.length > 20) l.segs = singleLine(l.segs);   /* map-lines.js brings its own */
+for (const l of DATA.lines) addRoute(l.segs, SERVICE_COLOR[l.service], (l.service === 'SIR' ? 'Staten Island Railway' : l.name) + ' · ' + COMPANY(l.service), false, l.service.replace(' Peak', ''));
+
+/* Side-by-side lines, in the manner of the official subway map.
+   The source data follows individual tracks, so services on one street wander a few metres apart and weave
+   at junctions. bundle() turns that into clean linework in four steps:
+     1. pull every line onto a shared centreline with whatever runs alongside it, then smooth;
+     2. merge each colour into single strands: track an earlier service of the colour already covers is not
+        drawn again, and a branch starts exactly on the trunk point it leaves;
+     3. where strands of different colours share a centreline, give each an evenly spaced lane;
+     4. store each point's sideways unit offset; the lane gap itself is set in screen pixels when painting.
+   It is run twice: 'near' for normal viewing, and 'far' with a wider reach for the zoomed-out view, where
+   lines a couple of blocks apart would otherwise print on top of each other. */
+const STEP = 1.5;
+if (!window.MAP_LINES) for (const r of routes) r.raw = r.parts.map(part => {         /* even resampling, done once (only bundle() reads it) */
+  const out = [[part[0][0], part[0][1]]];
+  for (let i = 1; i < part.length; i++) {
+    const a = part[i - 1], b = part[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / STEP));
+    for (let j = 1; j <= n; j++) out.push([a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n]);
+  }
+  return out;
+}).filter(part => part.length >= 3 || r.dashed);              /* drops stray specks in the source data */
+const lineColors = [...new Set(routes.map(r => r.color))];
+routes.forEach(r => { r.ci = lineColors.indexOf(r.color); });
+
+function bundle(NEAR) {
+  const PULL = 1, MATE = 0, CROSS = 1.0, DIVERGE = 0, SPLIT = 0, TANGENT = true,   /* DIVERGE and SPLIT: tried for Canal Street, off (they loosened DeKalb Avenue and other junctions) */
+     CONNECT = true, ROUND = 6;   /* MATE 0.5 keeps lines strictly with their own tracks (straighter at Columbus Circle, but DeKalb Avenue comes apart) */
+        /* 0: every line within reach pulls equally */
+  const COVER = 1.3, CLOSE = 1.3 * NEAR / 2.2;   /* CLOSE: how near two lines must run to share a bundle's lanes */                           /* a service within this of track its colour already draws is not drawn again */
+  const R = NEAR / 2.2;                                        /* reaches below scale with the bundling reach (1 for 'near') */
+  const CELL = Math.max(4, NEAR * 1.3, 2.8 * R + 0.1);
+  const work = routes.map(r => r.raw.map(part => part.map(q => { const c = [q[0], q[1]]; c.rx = q[0]; c.ry = q[1]; return c; })));   /* rx, ry: where the track really is */
+  const directions = part => part.forEach((q, i) => {
+    const a = part[Math.max(0, i - 2)], b = part[Math.min(part.length - 1, i + 2)], len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    q.dx = (b[0] - a[0]) / len; q.dy = (b[1] - a[1]) / len;
+  });
+  const put = (grid, q) => { const key = Math.floor(q[0] / CELL) + ',' + Math.floor(q[1] / CELL); if (!grid.has(key)) grid.set(key, []); grid.get(key).push(q); };
+  const around = (grid, q, fn) => {
+    const cx = Math.floor(q[0] / CELL), cy = Math.floor(q[1] / CELL);
+    for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gy = cy - 1; gy <= cy + 1; gy++) for (const o of grid.get(gx + ',' + gy) || []) fn(o);
+  };
+  work.forEach(parts => parts.forEach(directions));
+
+  /* 1. shared centrelines */
+  for (let pass = 0; pass < 4; pass++) {
+    const grid = new Map(); let pid = 0;
+    work.forEach(parts => parts.forEach(part => { part.pid = pid++; part.forEach(q => { q.pid = part.pid; put(grid, q); }); }));
+    /* first, for every point: how far its nearest companion is (q.dmin), and which side of it each line nearby
+       lies (q.lats: line -> sideways distance, left positive) */
+    work.forEach(parts => parts.forEach(part => part.forEach(q => {
+      let dm = Infinity; const lats = new Map(), dist = new Map();
+      around(grid, q, o => {
+        if (o.pid === part.pid || Math.abs(o.dx * q.dx + o.dy * q.dy) < 0.85) return;
+        const d = Math.hypot(o[0] - q[0], o[1] - q[1]); if (d < dm) dm = d;
+        if (d < NEAR && d < (dist.get(o.pid) ?? Infinity)) { dist.set(o.pid, d); lats.set(o.pid, (o[0] - q[0]) * -q.dy + (o[1] - q[1]) * q.dx); }
+      });
+      q.dmin = dm; q.lats = lats; q.block = null;
+    })));
+    /* Two lines that CROSS at a shallow angle are within reach of each other for a while and, pulled together,
+       bend into an S through the crossing. Where a line passes from clearly one side of another to clearly the
+       other within a few points, the two do not pull each other over that stretch: they cross straight. */
+    if (CROSS) work.forEach(parts => parts.forEach(part => {
+      const n = part.length;
+      for (let i = 0; i < n - 1; i++) for (const [pid, la] of part[i].lats) {
+        const lb = part[i + 1].lats.get(pid); if (lb === undefined || la * lb >= 0) continue;        /* the sign flips between i and i+1 */
+        let j = -1, k = -1;
+        for (let m = i; m >= Math.max(0, i - 8); m--) { const v = part[m].lats.get(pid); if (v === undefined) break; if (v * la > 0 && Math.abs(v) > CROSS * R) { j = m; break; } }
+        for (let m = i + 1; m <= Math.min(n - 1, i + 9); m++) { const v = part[m].lats.get(pid); if (v === undefined) break; if (v * lb > 0 && Math.abs(v) > CROSS * R) { k = m; break; } }
+        if (j < 0 || k < 0) continue;
+        for (let m = j; m <= k; m++) (part[m].block || (part[m].block = new Set())).add(pid);
+      }
+    }));
+    /* Two lines that are DIVERGING (or converging) are not pulled together either, once they are clearly apart:
+       where a line leaves a trunk, the pull used to drag the trunk a little way after it and the branch back
+       toward the trunk, so a straight line got a hook at the split. Lines running parallel some way apart still
+       pull each other (their sideways gap stays the same along the line); these do not (it changes). */
+    if (DIVERGE) work.forEach(parts => parts.forEach(part => {
+      const n = part.length;
+      for (let i = 0; i < n; i++) for (const [pid, la] of part[i].lats) {
+        if (Math.abs(la) < DIVERGE * R) continue;
+        const v0 = part[Math.max(0, i - 2)].lats.get(pid), v1 = part[Math.min(n - 1, i + 2)].lats.get(pid);
+        if (v0 === undefined || v1 === undefined || Math.abs(v1 - v0) > 0.5 * R) (part[i].block || (part[i].block = new Set())).add(pid);
+      }
+    }));
+    work.forEach(parts => parts.forEach(part => part.forEach(q => {
+      const best = new Map();
+      around(grid, q, o => {
+        if (o.pid === part.pid || Math.abs(o.dx * q.dx + o.dy * q.dy) < 0.85) return;
+        const d = Math.hypot(o[0] - q[0], o[1] - q[1]); if (d >= NEAR) return;
+        /* a line that already has a companion right beside it (the lines on its own tracks) is not drawn across
+           to another line much further off, and does not draw that one over either: the two of them only pull
+           each other if neither has anything MATE nearer */
+        if (MATE && d > Math.min(q.dmin, o.dmin) + MATE * NEAR) return;
+        if (q.block && q.block.has(o.pid)) return;
+        const b = best.get(o.pid); if (!b || d < b.d) best.set(o.pid, { d, x: o[0], y: o[1] });
+      });
+      /* a line right alongside (on the same tracks) pulls fully; one further off pulls less the further it is, so
+         a line stays with the lines it really runs with and is not dragged across to another a block away */
+      let sx = q[0], sy = q[1], sw = 1;
+      for (const b of best.values()) { const w = PULL ? Math.max(0.05, 1 - Math.pow(b.d / NEAR, PULL)) : 1; sx += b.x * w; sy += b.y * w; sw += w; }
+      q.nx = sx / sw; q.ny = sy / sw;
+    })));
+    work.forEach(parts => parts.forEach(part => {
+      part.forEach(q => { q[0] = q.nx; q[1] = q.ny; });
+      const W = 3, src = part.map(q => [q[0], q[1]]);       /* smooth along the line; ends stay put */
+      part.forEach((q, i) => {
+        const w = Math.min(W, i, part.length - 1 - i); if (!w) return;
+        let x = 0, y = 0; for (let n = i - w; n <= i + w; n++) { x += src[n][0]; y += src[n][1]; }
+        q[0] = x / (2 * w + 1); q[1] = y / (2 * w + 1);
+      });
+      directions(part);
+    }));
+  }
+
+  /* 2. one strand per colour */
+  const drawn = lineColors.map(() => new Map()), strands = routes.map(() => []);
+  routes.forEach((r, ri) => {
+    const grid = drawn[r.ci], mine = [];
+    const nearest = (p, reach) => { let best = null, bd = reach; around(grid, p, o => { const d = Math.hypot(o[0] - p[0], o[1] - p[1]); if (d < bd) { bd = d; best = o; } }); return best; };
+    for (const part of work[ri]) {
+      const fresh = [];
+      /* covered track: the drawn point that covers it also carries this service (q.svcs), so the legend can
+         pick out exactly the stretch a single service runs on */
+      /* every covering point is marked (a colour can be drawn as overlapping pieces), except the eased points
+         at a strand's end: those take their services from their own strand's body afterwards, so a line
+         running straight past a junction does not pick up the first bit of the branch */
+      const hits = part.map(q => { const h = []; around(grid, q, o => { if (Math.hypot(o[0] - q[0], o[1] - q[1]) < COVER * R && Math.abs(o.dx * q.dx + o.dy * q.dy) > 0.8) h.push(o); }); return h; });
+      const covered = hits.map(h => h.length > 0);
+      /* Where this service leaves track its colour already draws, it counts as leaving from the last point that
+         is really ON that track, not from where it finally gets out of reach: a line going straight on while the
+         trunk bends away used to stay "covered" round the start of the bend, and then joined the trunk there
+         with a hook instead of running straight into it. */
+      if (SPLIT) {
+        const hd = part.map((q, k) => hits[k].reduce((m, o) => Math.min(m, Math.hypot(o[0] - q[0], o[1] - q[1])), Infinity));
+        for (let i = 0; i < part.length - 1; i++) {
+          if (covered[i] && !covered[i + 1]) for (let k = i; k > 0 && covered[k] && hd[k] > SPLIT * R && i - k < 6; k--) covered[k] = false;
+          if (!covered[i] && covered[i + 1]) for (let k = i + 1; k < part.length - 1 && covered[k] && hd[k] > SPLIT * R && k - i <= 6; k++) covered[k] = false;
+        }
+      }
+      for (let i = 0; i < part.length;) {                     /* tiny uncovered slivers inside covered track are noise */
+        let j = i; while (j + 1 < part.length && covered[j + 1] === covered[i]) j++;
+        if (!covered[i] && j - i + 1 < 4 && i > 0 && j < part.length - 1) for (let n = i; n <= j; n++) covered[n] = true;
+        i = j + 1;
+      }
+      /* the last few covered points before this service's own strand begins (and the first few after it ends)
+         are drawn by that strand's easing curve, not by the trunk, so they must not mark the trunk */
+      if (!r.dashed) {
+        const eased = new Array(part.length).fill(false);
+        for (let i = 0; i < part.length;) {
+          let j = i; while (j + 1 < part.length && covered[j + 1] === covered[i]) j++;
+          if (!covered[i]) { if (i > 0) for (let n = Math.max(0, i - 5); n < i; n++) eased[n] = true; if (j < part.length - 1) for (let n = j + 1; n <= Math.min(part.length - 1, j + 5); n++) eased[n] = true; }
+          i = j + 1;
+        }
+        hits.forEach((h, n) => { if (!eased[n]) for (const o of h) if (!o.lead) (o.svcs || (o.svcs = new Set())).add(r.service); });
+      }
+      for (let i = 0; i < part.length;) {
+        let j = i; while (j + 1 < part.length && covered[j + 1] === covered[i]) j++;
+        if (!covered[i]) {
+          const pts = [];
+          /* Leaving (or rejoining) covered track: the strand starts a few points back, exactly on the trunk,
+             and eases across to its own course, so the split is a gentle tangent curve and not a corner.
+             At the very end of a piece it joins only another piece of the same service; the end of a
+             service is never tied to a different line that merely passes close by. */
+          const LEAD = 5;
+          const ease = (at, dir) => {                      /* at: the covered point next to the stretch; dir: -1 before it, +1 after */
+            const out = [];
+            for (let k = LEAD; k >= 1; k--) {
+              const p = part[at + dir * (k - 1)]; if (!p) continue;
+              const o = nearest(p, 3); if (!o) continue;
+              if (!out.length) { const c = [o[0], o[1]]; c.attach = o; out.push(c); continue; }
+              const w = (LEAD - k) / LEAD, t = w * w * (3 - 2 * w), c = [o[0] + (p[0] - o[0]) * t, o[1] + (p[1] - o[1]) * t];
+              c.rx = p.rx; c.ry = p.ry; c.lead = o; out.push(c);
+            }
+            return out;
+          };
+          /* end-to-end joint between two pieces of one service: the end point itself is pinned onto the other piece */
+          const sameService = (p) => { const o = nearest(p, 1.8); if (o && o.ri === ri && !p.attach) { p[0] = o[0]; p[1] = o[1]; p.attach = o; } return []; };
+          const head = i > 0 ? ease(i - 1, -1) : sameService(part[i]), tail = j < part.length - 1 ? ease(j + 1, 1).reverse() : sameService(part[j]);
+          pts.push(...head);
+          for (let n = i; n <= j; n++) pts.push(part[n]);
+          pts.push(...tail);
+          if (pts.length >= 2) { mine.push(pts); fresh.push(pts); if (!r.dashed) for (const q of pts) (q.svcs || (q.svcs = new Set())).add(r.service); }
+        }
+        i = j + 1;
+      }
+      /* file this piece's strands straight away, so the service's own later pieces join or merge with them */
+      for (const strand of fresh) { directions(strand); for (const q of strand) if (!q.attach) { q.ri = ri; put(grid, q); } }
+    }
+    strands[ri] = mine;
+  });
+
+  /* A service that ends just past the point where it leaves its colour's trunk (the 6 at Brooklyn Bridge, whose
+     last few hundred metres are the City Hall loop) would be drawn as a short spur with the end dot on its tip.
+     Such a spur (joined to the trunk at one end, free at the other, at most STUB points of its own) is not drawn:
+     the end dot then sits on the trunk itself, where the service leaves it. */
+  const STUB = 6;
+  strands.forEach((list, ri) => {
+    if (routes[ri].dashed) return;
+    strands[ri] = list.filter(strand => {
+      const a = strand[0], b = strand[strand.length - 1], own = strand.filter(q => !q.attach && !q.lead).length;
+      if (own > STUB || !!a.attach === !!b.attach) return true;
+      for (const q of strand) q.gone = true;
+      return false;
+    });
+  });
+  /* The same thing seen from the trunk: the trunk is whichever service of the colour was laid first, and if THAT
+     one is the service that ends just past the junction (the 6 is laid before the 4 and 5), the spur is the last
+     few points of the trunk itself, beyond where the other strand is joined to it. Those are cut off. */
+  {
+    const joined = new Set();
+    strands.forEach(list => list.forEach(strand => { for (const q of [strand[0], strand[strand.length - 1]]) if (q.attach) joined.add(q.attach); }));
+    strands.forEach((list, ri) => { if (routes[ri].dashed) return; list.forEach(strand => {
+      for (let pass = 0; pass < 2; pass++) {                    /* its start, then (turned round) its end */
+        if (!strand[0].attach && strand.length > STUB + 6) {
+          /* only where ONE other strand is joined near the end (the line carrying on); where two are (a junction
+             with a branch, East 180th Street) the trunk's end is left alone */
+          let k = -1, cnt = 0; for (let m = 0; m <= STUB + 3 && m < strand.length - 2; m++) if (joined.has(strand[m])) { cnt++; if (k < 0) k = m; }
+          if (k > 0 && cnt === 1) for (const q of strand.splice(0, k)) q.gone = true;
+        }
+        strand.reverse();
+      }
+    }); });
+  }
+
+  /* 2b. weld. After step 1 lines that run together are close but not identical, and at high zoom a few metres
+         shows as lines printing over each other. So strands are settled one at a time, and each is moved
+         exactly onto any already-settled strand of another colour it runs beside (easing on and off over a
+         few points). Lanes are then measured from one true centreline. */
+  {
+    const settled = new Map();
+    strands.forEach((list, ri) => { const ci = routes[ri].ci; for (const strand of list) {
+      const target = strand.map(q => {
+        if (q.attach) return null;
+        let best = null, bd = 1.3 * R;
+        around(settled, q, o => { if (o.ci === ci || Math.abs(o.dx * q.dx + o.dy * q.dy) < 0.85) return; const d = Math.hypot(o[0] - q[0], o[1] - q[1]); if (d < bd) { bd = d; best = o; } });
+        if (!best) return null;
+        let out = null, od = Infinity;                       /* closest point on the settled strand's two segments at that point */
+        for (const [a, b] of [[best.st[best.i - 1], best], [best, best.st[best.i + 1]]]) {
+          if (!a || !b) continue;
+          const dx = b[0] - a[0], dy = b[1] - a[1], len = dx * dx + dy * dy, t = len ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / len)) : 0;
+          const x = a[0] + t * dx, y = a[1] + t * dy, d = Math.hypot(x - q[0], y - q[1]);
+          if (d < od) { od = d; out = [x, y]; }
+        }
+        return out || [best[0], best[1]];
+      });
+      const EASE = 4, n = strand.length;
+      /* a brief brush past another line (under about 500 m) is not a shared run: leave it alone, or the line
+         would kink over and back; likewise fill pin-hole gaps inside a long run */
+      for (let i = 0; i < n;) { let j = i; while (j + 1 < n && !target[j + 1] === !target[i]) j++; if (target[i] && j - i + 1 < 7) for (let m = i; m <= j; m++) target[m] = null; i = j + 1; }
+      strand.forEach((q, i) => {
+        if (!target[i]) return;
+        /* a run that reaches the strand's own end is welded right up to it; otherwise ease in from the run's edge */
+        let lo = i, hi = i; while (lo > 0 && target[lo - 1]) lo--; while (hi < n - 1 && target[hi + 1]) hi++;
+        const fromLo = lo === 0 ? Infinity : i - lo + 1, fromHi = hi === n - 1 ? Infinity : hi - i + 1;
+        const w = Math.min(1, Math.min(fromLo, fromHi) / EASE), t = w * w * (3 - 2 * w);
+        q[0] += (target[i][0] - q[0]) * t; q[1] += (target[i][1] - q[1]) * t;
+      });
+      /* a point that landed out of sequence (snapped to a different neighbour than the points around it)
+         would make a zig-zag: put any such point back between its neighbours */
+      for (let pass = 0; pass < 3; pass++) for (let i = 1; i < n - 1; i++) {
+        const a = strand[i - 1], q = strand[i], b = strand[i + 1]; if (q.attach) continue;
+        const ux = q[0] - a[0], uy = q[1] - a[1], vx = b[0] - q[0], vy = b[1] - q[1], lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+        if (lu < 1e-6 || lv < 1e-6 || (ux * vx + uy * vy) / (lu * lv) < 0.6 || lu > 2.6 * lv || lv > 2.6 * lu) { q[0] = (a[0] + b[0]) / 2; q[1] = (a[1] + b[1]) / 2; }
+      }
+      directions(strand);
+      strand.forEach((q, i) => { if (!q.attach) { q.ci = ci; q.st = strand; q.i = i; put(settled, q); } });
+    } });
+    /* points pinned to a trunk follow the trunk to its welded position */
+    strands.forEach(list => list.forEach(strand => {
+      strand.forEach(q => { if (q.attach) { q[0] = q.attach[0]; q[1] = q.attach[1]; } });
+      /* re-lay the easing points between the trunk and the first point of the branch proper, so the branch
+         still leaves the (now welded) trunk on a tangent curve */
+      const relay = (order) => {
+        if (!order.length || !order[0].attach) return;
+        let h = 0; while (order[h + 1] && order[h + 1].lead) h++;
+        const A = order[0], B = order[h + 1]; if (!h || !B) return;
+        for (let k = 1; k <= h; k++) {
+          const q = order[k], f = k / (h + 1), t = f * f * (3 - 2 * f), cx = A[0] + (B[0] - A[0]) * f, cy = A[1] + (B[1] - A[1]) * f;
+          q[0] = q.lead[0] + (cx - q.lead[0]) * t; q[1] = q.lead[1] + (cy - q.lead[1]) * t;
+        }
+      };
+      relay(strand); relay(strand.slice().reverse());
+      directions(strand);
+    }));
+  }
+
+  /* A branch joins its trunk where its own straight course meets it. The data often has the two part company a
+     little way round a bend of the trunk, so a branch that really carries straight on (Broadway below Canal
+     Street, where the bridge tracks curve away) reached the trunk with a hook. The branch's course some way out
+     is extended back, and the join is moved along the trunk to the first point that lies on that line and runs
+     the same way; the branch's first points are laid straight onto it. */
+  if (TANGENT) strands.forEach(list => list.forEach(strand => {
+    const n = strand.length;
+    for (const [end, step] of [[0, 1], [n - 1, -1]]) {
+      const pin = strand[end], T = pin.attach; if (!T || !T.st || T.i === undefined) continue;
+      let h = 0; while (strand[end + step * (h + 1)] && strand[end + step * (h + 1)].lead) h++;
+      const P1 = strand[end + step * (h + 3)], P2 = strand[end + step * (h + 8)]; if (!P1 || !P2 || P1.attach || P2.attach) continue;
+      const L = Math.hypot(P1[0] - P2[0], P1[1] - P2[1]); if (L < 3) continue;
+      const vx = (P1[0] - P2[0]) / L, vy = (P1[1] - P2[1]) / L, ts = T.st;       /* the branch's course, toward the trunk */
+      let best = null;
+      for (let j = Math.max(1, T.i - 14); j <= Math.min(ts.length - 2, T.i + 14); j++) {
+        const c = ts[j]; if (c.attach || c.lead) continue;
+        const ax = c[0] - P1[0], ay = c[1] - P1[1], along_ = ax * vx + ay * vy, off = Math.abs(ax * vy - ay * vx);
+        if (along_ < 1 || off > 0.3 * R || Math.abs(c.dx * vx + c.dy * vy) < 0.97) continue;
+        /* ...and the trunk must carry straight on along that line beyond the join (the next four points too):
+           only a branch that is really the trunk's own straight continuation is moved */
+        const far = ts[j + 1] && (ts[j + 1][0] - c[0]) * vx + (ts[j + 1][1] - c[1]) * vy > 0 ? 1 : -1; let straight = true;
+        for (let m = 1; m <= 4 && straight; m++) {
+          const t = ts[j + far * m]; if (!t) { straight = false; break; }
+          const bx = t[0] - P1[0], by = t[1] - P1[1];
+          if (Math.abs(bx * vy - by * vx) > 0.3 * R || Math.abs(t.dx * vx + t.dy * vy) < 0.97) straight = false;
+        }
+        if (!straight) continue;
+        if (!best || along_ < best.along_) best = { c, along_ };
+      }
+      if (!best || best.c === T) continue;
+      pin.attach = best.c; pin[0] = best.c[0]; pin[1] = best.c[1];
+      const m = h + 3;                                         /* points between the join and P1 go on the straight line */
+      for (let k = 1; k < m; k++) { const q = strand[end + step * k], f = k / m; q[0] = pin[0] + (P1[0] - pin[0]) * f; q[1] = pin[1] + (P1[1] - pin[1]) * f; if (q.lead) q.lead = best.c; }
+      directions(strand);
+    }
+  }));
+
+  /* A short free stretch between two shared runs (a line leaving one trunk and joining another a few blocks on)
+     starts and ends with a corner if left as the tracks have it; it is rounded below. */
+  if (CONNECT) {                                               /* shared: another subway colour runs on this very line here */
+    const g2 = new Map();
+    strands.forEach((list, ri) => list.forEach(strand => strand.forEach(q => { q.ci = routes[ri].ci; q.el = !!routes[ri].dashed; if (!q.attach && !q.el) put(g2, q); })));
+    strands.forEach(list => list.forEach(strand => strand.forEach(q => {
+      q.w = false; if (q.el) return;
+      around(g2, q, o => {                                     /* within 17 m sideways of a point up to a step along */
+        if (q.w || o.ci === q.ci || Math.abs(o.dx * q.dx + o.dy * q.dy) < 0.9) return;
+        const vx = o[0] - q[0], vy = o[1] - q[1];
+        if (Math.abs(vx * q.dx + vy * q.dy) < 1.1 && Math.abs(vx * -q.dy + vy * q.dx) < 0.3 * R) q.w = true;
+      });
+    })));
+    strands.forEach(list => list.forEach(strand => {           /* one-point holes and specks are noise */
+      const w = strand.map(q => q.w);
+      strand.forEach((q, i) => { if (i > 0 && i < strand.length - 1 && w[i - 1] === w[i + 1]) q.w = w[i - 1]; });
+    }));
+    /* host: the point of an earlier strand (another colour) that q was laid exactly on. When that stretch is
+       re-laid as a curve below, q moves with it, or it would keep the old corner. */
+    let order = 0; strands.forEach(list => list.forEach(strand => { const o = order++; strand.forEach(q => { q.so = o; q.ox = q[0]; q.oy = q[1]; }); }));
+    strands.forEach(list => list.forEach(strand => strand.forEach(q => {
+      q.host = null; if (q.attach || q.el) return; let bd = 0.06;
+      around(g2, q, o => { if (o.ci === q.ci || o.so >= q.so) return; const d = Math.hypot(o.ox - q.ox, o.oy - q.oy); if (d < bd) { bd = d; q.host = o; } });
+    })));
+  }
+  if (CONNECT) strands.forEach(list => list.forEach(strand => {
+    const n = strand.length;
+    for (const q of strand) if (q.host) { q[0] += q.host[0] - q.host.ox; q[1] += q.host[1] - q.host.oy; }
+    for (let i = 4; i < n - 4;) {
+      if (strand[i].w || !strand[i - 1].w) { i++; continue; }
+      let j = i; while (j + 1 < n && !strand[j + 1].w) j++;
+      const a = i - 1, b = j + 1, len = j - i + 1;             /* a, b: the last and first shared points either side */
+      if (a >= 3 && b < n - 3 && len <= 16 && strand[a - 1].w && strand[b + 1].w && !strand.slice(a, b + 1).some(q => q.attach || q.lead)) {
+        /* the stretch and the two points where it leaves and rejoins are evened out together (their neighbours on
+           the trunks stay put), which rounds the corners at both ends */
+        for (let pass = 0; pass < ROUND; pass++) {
+          const x = strand.map(q => q[0]), y = strand.map(q => q[1]);
+          for (let m = a; m <= b; m++) { strand[m][0] = (x[m - 1] + 2 * x[m] + x[m + 1]) / 4; strand[m][1] = (y[m - 1] + 2 * y[m] + y[m + 1]) / 4; }
+        }
+        directions(strand);
+      }
+      i = j + 1;
+    }
+  }));
+
+  /* Where one strand carries a line on from the end of another (the same service drawn in two pieces), the two
+     ends rarely meet in a straight run: the last points of one and the first of the other are evened out
+     together, so the line passes the joint without a bend. */
+  strands.forEach(list => list.forEach(strand => {
+    const n = strand.length;
+    for (const [end, step] of [[0, 1], [n - 1, -1]]) {
+      const pin = strand[end], T = pin.attach; if (!T || !T.st) continue;
+      const ts = T.st; if (T.i !== 0 && T.i !== ts.length - 1) continue;
+      const back = T.i === 0 ? 1 : -1, seq = [];
+      for (let k = 6; k >= 1; k--) { const q = ts[T.i + back * k]; if (q) seq.push(q); }
+      seq.push(T);
+      for (let k = 1; k <= 6; k++) { const q = strand[end + step * k]; if (q) seq.push(q); }
+      for (let pass = 0; pass < 6; pass++) {
+        const x = seq.map(q => q[0]), y = seq.map(q => q[1]);
+        for (let i = 2; i < seq.length - 2; i++) { if (seq[i].attach && seq[i] !== T) continue; seq[i][0] = (x[i - 1] + 2 * x[i] + x[i + 1]) / 4; seq[i][1] = (y[i - 1] + 2 * y[i] + y[i + 1]) / 4; }
+      }
+      pin[0] = T[0]; pin[1] = T[1]; directions(strand); directions(ts);
+    }
+  }));
+
+  /* 3. which colours share the centreline at each point? */
+  const all = new Map();
+  strands.forEach((list, ri) => list.forEach(strand => strand.forEach(q => { q.ci = routes[ri].ci; if (!q.attach) put(all, q); })));
+  const beside = (q, fn, reach = 1.3 * R) => around(all, q, o => { if (o.ci !== q.ci && Math.hypot(o[0] - q[0], o[1] - q[1]) < reach && Math.abs(o.dx * q.dx + o.dy * q.dy) > 0.85) fn(o); });
+  const everyStrand = fn => strands.forEach(list => list.forEach(fn));
+  everyStrand(strand => strand.forEach(q => { q.mask = 1 << q.ci; beside(q, o => { q.mask |= 1 << o.ci; }); }));
+  /* if A counts B as a neighbour, B must count A, or the two would not leave room for each other */
+  const mutual = () => everyStrand(strand => strand.forEach(q => beside(q, o => { if (q.mask & (1 << o.ci)) o.mask |= 1 << q.ci; })));
+  mutual();
+  everyStrand(strand => {                                      /* ignore very short stretches (crossings, noise) */
+    const runs = [];
+    for (let i = 0; i < strand.length;) { let j = i; while (j + 1 < strand.length && strand[j + 1].mask === strand[i].mask) j++; runs.push({ i, j, mask: strand[i].mask, long: j - i + 1 >= 6 }); i = j + 1; }
+    /* a short run takes the membership of the nearest proper run (the one before it if there is one); a short
+       run never passes its membership on, so noise cannot spread along the line */
+    runs.forEach((r, n) => {
+      if (r.long) return;
+      let src = null; for (let d = 1; d < runs.length && !src; d++) src = (runs[n - d] && runs[n - d].long && runs[n - d]) || (runs[n + d] && runs[n + d].long && runs[n + d]) || null;
+      if (src) for (let m = r.i; m <= r.j; m++) strand[m].mask = src.mask;
+    });
+  });
+  mutual();
+  const stretches = (strand, fn) => { for (let i = 0; i < strand.length;) { let j = i; while (j + 1 < strand.length && strand[j + 1].mask === strand[i].mask) j++; fn(i, j); i = j + 1; } };
+
+  /* 4. which side is "positive"? Every strand in a bundle must agree. Strands are settled one at a time:
+        a stretch running beside strands already settled takes their sense; otherwise it keeps the sense of
+        the stretch before it, so a strand never flips sides along its own length for no reason. */
+  everyStrand(strand => {
+    const list = [];
+    stretches(strand, (i, j) => {
+      let vote = 0;
+      for (let n = i; n <= j; n++) { const q = strand[n]; beside(q, o => { if (o.cx !== undefined) vote += Math.sign(-q.dy * o.cx + q.dx * o.cy); }); }
+      list.push({ i, j, side: Math.sign(vote) });
+    });
+    /* stretches with no settled neighbour take the sense of the nearest stretch that has one (looking both
+       ways along the strand); a strand with none at all falls back to a fixed rule on its overall heading */
+    const a = strand[0], b = strand[strand.length - 1], fallback = (b[0] - a[0]) * 0.5 + (b[1] - a[1]) * 0.866 >= 0 ? 1 : -1;
+    list.forEach((st, n) => {
+      if (st.side) return;
+      for (let d = 1; d < list.length && !st.fill; d++) st.fill = (list[n - d] && list[n - d].side) || (list[n + d] && list[n + d].side) || 0;
+    });
+    for (const st of list) { const side = st.side || st.fill || fallback; for (let n = st.i; n <= st.j; n++) { const q = strand[n]; q.cx = -q.dy * side; q.cy = q.dx * side; } }
+  });
+
+  /* 5. lane order. Colours are ordered across a bundle by where their real tracks lie relative to the shared
+        centreline, so a line coming in from the left takes a left lane and does not have to cross the
+        others. Each strand has one such figure per stretch, and every strand in the bundle sorts the same
+        figures, so they always agree on the order. */
+  everyStrand(strand => stretches(strand, (i, j) => {
+    let sum = 0, n = 0;
+    for (let m = i; m <= j; m++) { const q = strand[m]; if (q.rx !== undefined) { sum += (q.rx - q[0]) * q.cx + (q.ry - q[1]) * q.cy; n++; } }
+    /* rounded to 12 m steps: colours on the very same tracks tie, and ties keep one fixed order */
+    for (let m = i; m <= j; m++) strand[m].off = n ? Math.round(sum / n / 0.25) * 0.25 : 0;
+  }));
+  /* Colours whose tracks are in the same place (within ~15 m) have no natural order, and deciding it stretch
+     by stretch makes them swap back and forth. For those, one order is fixed for the whole length the two
+     strands share. */
+  /* The demolished els (dotted) take no part in ordering the subway lines. They used to count as members of a
+     bundle, so wherever an el's course came near a subway line the real lines made room for it, changed lanes or
+     swapped sides. Now the subway lines are arranged among themselves, and an el running along a bundle is put
+     just outside it, on the side its own course lies. */
+  /* q.el: the point belongs to a demolished el (by its route, not its colour: the J/Z brown is also an el's colour) */
+  strands.forEach((list, ri) => list.forEach(strand => strand.forEach(q => { q.el = !!routes[ri].dashed; })));
+  let sid = 0; everyStrand(strand => { strand.id = sid++; strand.forEach(q => { q.sid = strand.id; }); });
+  const pairLean = new Map();
+  const nearestBeside = q => { const m = new Map(); beside(q, o => { if (!(q.mask & (1 << o.ci))) return; const d = Math.hypot(o[0] - q[0], o[1] - q[1]); const b = m.get(o.ci); if (!b || d < b.d) m.set(o.ci, { d, o }); }, 2.8 * R); return m; };
+  /* Two strands keep ONE order for the whole length they share: if it were decided stretch by stretch, they would
+     swap sides (cross, and print over each other) wherever the bundle around them changes. The order is physical:
+     how far the higher-numbered strand's tracks lie to the left of the lower-numbered one's, seen along the lower
+     strand's direction of travel, averaged over every point where they run together. (The "positive" side, cx/cy,
+     may differ from stretch to stretch and strands may run in opposite directions, so it is all turned into that
+     one frame.) */
+  const leftSign = q => (q.cx * -q.dy + q.cy * q.dx) < 0 ? -1 : 1;           /* is the positive side the left-hand side? */
+  const along = (q, o) => (q.dx * o.dx + q.dy * o.dy) < 0 ? -1 : 1;
+  const leftOf = (q, o) => (o.off * ((o.cx * q.cx + o.cy * q.cy) < 0 ? -1 : 1) - q.off) * leftSign(q);   /* o's tracks to the left of q's, in q's frame */
+  everyStrand(strand => strand.forEach(q => { if (q.attach || q.el) return; for (const { o } of nearestBeside(q).values()) {
+    if (o.el) continue;
+    const key = Math.min(q.sid, o.sid) + '|' + Math.max(q.sid, o.sid), p = pairLean.get(key) || { sum: 0, n: 0 };
+    p.sum += q.sid < o.sid ? leftOf(q, o) : -along(q, o) * leftOf(q, o); p.n++; p.al = (p.al || 0) + along(q, o); pairLean.set(key, p);
+  } }));
+  /* Which side a line is on where it joins and where it leaves. Two lines running together are rarely on exactly
+     one centreline at the two ends of their shared run: there they are still a few metres apart, each on the side
+     it comes from or goes to. If both ends say "B is on the left of A", B belongs on the left for the whole run;
+     put on the right it would have to cross A on the way in and cross back on the way out. So the mean sideways
+     gap over the first and the last three points of each shared run counts as strong evidence for the pair (if
+     the two ends disagree they cancel, and the tracks decide). */
+  const ENDW = 15;
+  if (ENDW) everyStrand(strand => {
+    if (strand[0].el) return;
+    const open = new Map();                                    /* other strand -> the run so far: [{ q, o, geo }] */
+    const close = run => {
+      for (const part of run.length > 6 ? [run.slice(0, 3), run.slice(-3)] : [run]) {
+        const g = part.reduce((t, r) => t + r.geo, 0) / part.length; if (Math.abs(g) < 0.08 * R) continue;
+        const { q, o } = part[0], key = Math.min(q.sid, o.sid) + '|' + Math.max(q.sid, o.sid), pr = pairLean.get(key) || { sum: 0, n: 0 };
+        const v = (g > 0 ? 1 : -1) * ENDW; pr.sum += q.sid < o.sid ? v : -along(q, o) * v; pr.n += ENDW; pairLean.set(key, pr);
+      }
+    };
+    strand.forEach((q, i) => {
+      const now = new Map();
+      if (!q.attach) for (const { o } of nearestBeside(q).values()) if (!o.el) now.set(o.sid, { q, o, geo: (o[0] - q[0]) * -q.dy + (o[1] - q[1]) * q.dx });
+      for (const [k, run] of open) if (!now.has(k)) { close(run); open.delete(k); }
+      for (const [k, r] of now) { if (!open.has(k)) open.set(k, []); open.get(k).push(r); }
+    });
+    for (const run of open.values()) close(run);
+  });
+  /* Where the tracks of two strands are in about the same place, the side is chosen so that branches can leave
+     without crossing: a strand whose own-colour branches peel off to the left leans left (as if its tracks lay a
+     little to the left), one whose branches leave to the right leans right. The lean belongs to the strand, not to
+     a pair, so the orders it produces never contradict each other. */
+  const bias = new Map();
+  everyStrand(strand => {
+    const n = strand.length; if (n < 4) return;
+    for (const [end, step] of [[0, 1], [n - 1, -1]]) {
+      const T = strand[end].attach; if (!T || T.sid === undefined || T.dx === undefined) continue;
+      const b = strand[Math.max(0, Math.min(n - 1, end + step * 9))];             /* a point on the branch proper */
+      bias.set(T.sid, (bias.get(T.sid) || 0) + ((T.dx * (b[1] - T[1]) - T.dy * (b[0] - T[0])) > 0 ? 1 : -1));   /* +1: leaves to the trunk's left */
+    }
+  });
+  const BIAS = 0.3, lean1 = sid => BIAS * Math.sign(bias.get(sid) || 0);
+  /* One position per strand. The pairwise leans ("B's tracks lie 12 m to the left of A's") can contradict each
+     other round a ring of three or more strands, and then the order in a bundle would depend on who else is in
+     it: two lines would swap sides where a third joins and swap back where it leaves. So, in the manner of a
+     transit map, which gives every line one fixed place in the sequence across a trunk, each strand gets a single
+     sideways position X that fits all its pairwise leans as well as possible (least squares, weighted by how long
+     each pair runs together), and bundles are simply sorted by X. Two strands then keep the same order wherever
+     and with whomever they run. sig turns each strand's own left/right into one common sense (strands run in
+     either direction). */
+  const sig = new Array(sid).fill(0), X = new Array(sid).fill(0), links = Array.from({ length: sid }, () => []);
+  for (const [key, p] of pairLean) {
+    if (!p.n) continue; const [lo, hi] = key.split('|').map(Number), same = (p.al || 0) < 0 ? -1 : 1;
+    const t = p.sum / p.n + lean1(hi) * same - lean1(lo);                      /* hi to the left of lo, in lo's frame */
+    links[lo].push({ o: hi, same, t, w: p.n, lo: true }); links[hi].push({ o: lo, same, t, w: p.n, lo: false });
+  }
+  /* a strand that carries a line on from the end of another (joined within a few points of that end) is the same
+     line: the two are tied to one position, so the line keeps its side of its neighbours across the joint */
+  everyStrand(strand => {
+    const n = strand.length;
+    for (const [end, far] of [[0, n - 1], [n - 1, 0]]) {
+      const T = strand[end].attach; if (!T || T.sid === undefined || !T.st || T.sid === strand.id) continue;
+      const tn = T.st.length, atStart = T.i <= 4; if (!atStart && T.i < tn - 5) continue;
+      const same = (end === 0) === atStart ? -1 : 1, a = strand.id, b = T.sid;      /* joined head to head (or tail to tail): they run opposite ways */
+      links[a].push({ o: b, same, t: 0, w: 1e4, lo: a < b }); links[b].push({ o: a, same, t: 0, w: 1e4, lo: b < a });
+    }
+  });
+  for (let r = 0; r < sid; r++) {                              /* a common sense of "left" through each connected group */
+    if (sig[r]) continue; sig[r] = 1; const todo = [r];
+    while (todo.length) { const a = todo.pop(); for (const l of links[a]) if (!sig[l.o]) { sig[l.o] = sig[a] * l.same; todo.push(l.o); } }
+  }
+  for (let iter = 0; iter < 200; iter++) for (let a = 0; a < sid; a++) {
+    let sum = 0, w = 0;
+    for (const l of links[a]) { sum += l.w * (l.lo ? X[l.o] - sig[a] * l.t : X[l.o] + sig[l.o] * l.t); w += l.w; }
+    if (w) X[a] = sum / w;
+  }
+  const leftRel = (a, b) => {                                  /* +1 if strand point b lies to the left of a (in a's direction of travel), else -1 */
+    const d = X[b.sid] - X[a.sid];
+    return (Math.abs(d) > 1e-9 ? (d > 0 ? 1 : -1) : (b.sid > a.sid ? 1 : -1)) * sig[a.sid];
+  };
+  const ANCHOR = true, MASKED = true, ONLINE = 0.8 * R;   /* MASKED: a brief brush with a line (under six points) does not make it part of the bundle, unless the two are on the very same line (ONLINE: a point of the other within 45 m, half a step along it): then they need lanes however briefly they meet */
+                                          /* false: centre every bundle on its centreline, as before */
+  /* q.pv: the point before q on its strand; for a strand's first point, the point of the strand it is joined to,
+     so a line carried on by a second strand keeps its lane across the joint */
+  everyStrand(strand => { let pv = strand[0] && strand[0].attach || null; for (const q of strand) { if (q.attach) continue; q.pv = pv; pv = q; } });
+  everyStrand(strand => strand.forEach(q => {
+    if (q.attach) return;
+    if (q.el) { q.lane = 0; return; }                    /* placed afterwards, outside the subway lines */
+    /* Everyone in the bundle here is ranked together, in q's frame: each member is scored by how many of the
+       others lie before it, and the members are sorted by that score (colour number breaks ties). If the pairwise
+       orders ever contradict each other (A before B before C before A), every member still works out the same
+       ranking, so no two take the same lane. */
+    /* Who is in the bundle: every colour reached by stepping from line to line across it (q's neighbours, their
+       neighbours, ...), not just the ones q itself counts. Each line used to centre itself on its own list, and
+       where two lists differed in length the two lines sat half a lane or more out of step, and could end up on
+       the wrong side of each other for a stretch. */
+    const found = new Map([[q.ci, q]]), todo = [q];
+    while (todo.length) { const m = todo.pop(); beside(m, o => { if (found.has(o.ci) || o.attach || o.el || (MASKED && !(m.mask & (1 << o.ci)) && Math.hypot(o[0] - m[0], o[1] - m[1]) > ONLINE)) return; found.set(o.ci, o); todo.push(o); }, CLOSE); }
+    const mem = [...found].map(([c, o]) => ({ c, o })).sort((a, b) => a.c - b.c);
+    const after = (a, b) => {                                  /* is b after a (further along q's positive side)? */
+      if (!a.o || !b.o) return b.c > a.c;                      /* a colour in the bundle with no point close by: by colour number */
+      return leftRel(a.o, b.o) * ((-a.o.dy * q.cx + a.o.dx * q.cy) < 0 ? -1 : 1) > 0;
+    };
+    for (const m of mem) { m.score = 0; for (const o of mem) if (o !== m && after(o, m)) m.score++; }
+    mem.sort((a, b) => a.score - b.score || a.c - b.c);
+    /* The bundle is not re-centred each time a line joins or leaves (that made every line in it jog half a lane).
+       As on a transit map, the trunk keeps its place and the others take the slots beside it: the lowest-numbered
+       strand present leads, and each of the others sits as many lanes from it as it is places away in the order.
+       The leader itself simply carries on in the lane it had at its previous point (when it was following a
+       strand that has now left, it stays where it is and the rest close up to it). A line on its own is on its
+       centreline. */
+    const at_ = c => mem.findIndex(m => m.c === c), turn = o => (o.cx * q.cx + o.cy * q.cy) < 0 ? -1 : 1;
+    let lead = null; for (const m of mem) if (m.o !== q && m.o.sid < q.sid && m.o.lane !== undefined && (!lead || m.o.sid < lead.o.sid)) lead = m;
+    if (!ANCHOR) q.lane = at_(q.ci) - (mem.length - 1) / 2;
+    else if (mem.length === 1) q.lane = 0;
+    else if (lead) q.lane = lead.o.lane * turn(lead.o) + at_(q.ci) - at_(lead.c);
+    else q.lane = q.pv && q.pv.lane !== undefined ? q.pv.lane * turn(q.pv) : 0;
+  }));
+  everyStrand(strand => strand.forEach(q => {                  /* els: one lane outside the subway lines they run beside */
+    if (q.attach || !q.el) return;
+    let lo = Infinity, hi = -Infinity;
+    beside(q, o => { if (o.el || o.attach || o.lane === undefined) return; const l = o.lane * ((o.cx * q.cx + o.cy * q.cy) < 0 ? -1 : 1); lo = Math.min(lo, l); hi = Math.max(hi, l); }, CLOSE);
+    if (lo === Infinity) return;
+    const side = q.rx !== undefined ? (q.rx - q[0]) * q.cx + (q.ry - q[1]) * q.cy : 0;
+    q.lane = side >= 0 ? hi + 1 : lo - 1;
+  }));
+  /* safety net: if two colours side by side still worked out the same lane (they saw different neighbours), the
+     higher-numbered colour steps one lane further out, again until it is clear */
+  for (let pass = 0; pass < 4; pass++) everyStrand(strand => strand.forEach(q => {
+    if (q.attach || q.lane === undefined) return;
+    for (const { o } of nearestBeside(q).values()) {
+      if (o.lane === undefined || o.el !== q.el || q.ci < o.ci) continue;      /* (els are kept clear in the last step) */
+      const po = o.lane * ((o.cx * q.cx + o.cy * q.cy) < 0 ? -1 : 1);
+      if (Math.abs(po - q.lane) < 0.75) q.lane = po + 1;
+    }
+  }));
+  everyStrand(strand => {
+    /* steady the lane along the strand: each point takes the middle value of the five around it, which removes
+       one- and two-point flickers. (The old rule, "a short run takes the lane of the run before", ran on down a
+       row of short runs, and a line could keep a stale lane through a whole junction and end up on the wrong side
+       of its neighbour.) The lane counts in the strand's positive-side sense, so it is turned into one sense first. */
+    const n = strand.length;
+    const raw = strand.map(q => q.lane === undefined ? undefined : q.lane * leftSign(q));       /* in "left of travel" terms */
+    strand.forEach((q, i) => {
+      if (q.attach || q.lane === undefined) return;
+      const w = []; for (let m = Math.max(0, i - 2); m <= Math.min(n - 1, i + 2); m++) if (raw[m] !== undefined) w.push(raw[m]);
+      w.sort((a, b) => a - b); q.lane = w[w.length >> 1] * leftSign(q);
+    });
+    strand.forEach(q => { if (q.attach) return; q[2] = q.lane; q.ax = q.cx * q.lane; q.ay = q.cy * q.lane; });
+  });
+  /* a branch's first point sits exactly where the trunk is drawn */
+  strands.forEach(list => list.forEach(strand => strand.forEach(q => { if (q.attach) { q[2] = q.attach[2]; q.ax = q.attach.ax; q.ay = q.attach.ay; } })));
+  /* lane changes are eased along the line (about 300 m either way), so a line slides into and out of a
+     bundle on a long gentle curve; the ends, and the points pinned to a trunk, stay exactly where they are */
+  strands.forEach(list => list.forEach(strand => {
+    const W = 4, ax = strand.map(q => q.ax || 0), ay = strand.map(q => q.ay || 0);
+    strand.forEach((q, i) => {
+      const w = Math.min(W, i, strand.length - 1 - i);
+      if (w && !q.attach) { let x = 0, y = 0; for (let n = i - w; n <= i + w; n++) { x += ax[n]; y += ay[n]; } q.ax = x / (2 * w + 1); q.ay = y / (2 * w + 1); }
+    });
+  }));
+  /* Keeping lines apart. Lanes are worked out strand by strand, and where a bundle gains or loses a line each
+     strand notices it a point or two apart, so while they slide to their new lanes two lines could come too close or
+     cross. Two repairs, on the finished offsets:
+     a. strands sharing a centreline are put on EXACTLY the same line (the lower-numbered strand leads), since at
+        high zoom a few metres between "shared" centrelines is as much as a whole lane;
+     b. wherever two such lines are drawn less than one lane apart, both are pushed apart along the bundle's
+        normal, half each, toward the side their lanes say; repeated, so a push passes along a wide bundle. */
+  {
+    const onto = (q, o) => {                                   /* q's foot on o's strand, with o's offset there */
+      let out = null;
+      for (const [u, v] of [[o.st[o.i - 1], o], [o, o.st[o.i + 1]]]) {
+        if (!u || !v) continue;
+        const dx = v[0] - u[0], dy = v[1] - u[1], len = dx * dx + dy * dy, t = len ? Math.max(0, Math.min(1, ((q[0] - u[0]) * dx + (q[1] - u[1]) * dy) / len)) : 0;
+        const x = u[0] + t * dx, y = u[1] + t * dy, d = Math.hypot(x - q[0], y - q[1]);
+        if (!out || d < out.d) out = { u, v, t, x, y, d };
+      }
+      return out;
+    };
+    const free = q => !q.attach && !q.lead && q.lane !== undefined;
+    const SNAP1 = 0.15, SNAP0 = 0.3;
+    const neighbours = q => {                                   /* the other colours in q's bundle here, and any other right on its line */
+      const m = new Map(); for (const [c, v] of nearestBeside(q)) m.set(c, v.o);
+      beside(q, o => { if (m.has(o.ci) || o.attach || o.el || o.sid === undefined || !o.st) return; const P = onto(q, o); if (P && P.d < 0.15) m.set(o.ci, o); }, 1.3 * R);
+      return [...m.values()];
+    };
+    /* another strand of q's own colour running right alongside (two services of one colour on slightly different
+       tracks): the lower-numbered one leads, and the other is laid exactly on it so they draw as one line */
+    const twin = q => { let best = null, bd = SNAP0; around(all, q, o => { if (o.ci !== q.ci || o.sid === undefined || o.sid >= q.sid || !o.st || o.i < 3 || o.i > o.st.length - 4 || Math.abs(o.dx * q.dx + o.dy * q.dy) < 0.85) return;   /* (not the very end of the other strand: a strand carrying on from it is not beside it) */ const d = Math.hypot(o[0] - q[0], o[1] - q[1]); if (d < bd + 1.5) { const P = onto(q, o); if (P && P.d < bd) { bd = P.d; best = o; } } }); return best; };
+    const snapAll = () => everyStrand(strand => strand.forEach(q => {
+      if (!free(q)) return; let lead = null;
+      for (const o of [...neighbours(q), twin(q)]) { if (!o || o.sid >= q.sid || !o.st) continue; const P = onto(q, o); if (P && P.d < SNAP0 && (!lead || P.d < lead.d)) lead = P; }
+      /* fully onto the line when within 8 m of it, easing off to nothing at 17 m, so the line does not jog where it starts */
+      if (lead) { const f = Math.min(1, (SNAP0 - lead.d) / (SNAP0 - SNAP1)), t = f * f * (3 - 2 * f); q[0] += (lead.x - q[0]) * t; q[1] += (lead.y - q[1]) * t; }
+    }));
+    snapAll(); snapAll();
+    /* a strand joined to another (a branch on its trunk, or the second piece of one line) starts exactly where the
+       other is now: the snap may have moved that point, and the two pieces would be drawn a lane apart with a
+       loose end showing. The shift fades out over the strand's first few points. */
+    const rejoin = () => everyStrand(strand => {
+      for (const order of [strand, strand.slice().reverse()]) {
+        const A = order[0]; if (!A.attach) continue;
+        const dx = A.attach[0] - A[0], dy = A.attach[1] - A[1]; if (!dx && !dy) continue;
+        for (let k = 0; k < Math.min(order.length, 8); k++) { if (k && order[k].attach) break; const w = 1 - k / 8; order[k][0] += dx * w; order[k][1] += dy * w; }
+      }
+    });
+    rejoin(); snapAll(); rejoin();
+    for (let iter = 0; iter < 14; iter++) {
+      const moves = [];
+      everyStrand(strand => strand.forEach(q => {
+        if (!free(q)) return;
+        for (const o of neighbours(q)) {
+          if (o.sid >= q.sid || !o.st || o.lane === undefined) continue;                 /* each pair once */
+          const P = onto(q, o); if (!P || P.d > 0.3) continue;
+          const oax = (P.u.ax || 0) + P.t * ((P.v.ax || 0) - (P.u.ax || 0)), oay = (P.u.ay || 0) + P.t * ((P.v.ay || 0) - (P.u.ay || 0));
+          const D = q.lane - o.lane * ((o.cx * q.cx + o.cy * q.cy) < 0 ? -1 : 1);       /* how many lanes q should be beyond o */
+          const dir = Math.abs(D) >= 0.5 ? Math.sign(D) : (q.ci > o.ci ? 1 : -1);
+          const now = ((q.ax || 0) - oax) * q.cx + ((q.ay || 0) - oay) * q.cy, lack = 1 - dir * now;
+          if (lack <= 0.02) continue;
+          /* half each; between a subway line and an el, only the el moves */
+          const mine = q.el === o.el ? 0.5 : q.el ? 1 : 0, h = dir * lack;
+          if (mine) moves.push([q, h * mine * q.cx, h * mine * q.cy]);
+          if (mine < 1 && !P.u.attach && !P.u.lead) moves.push([P.u, -h * (1 - mine) * q.cx * (1 - P.t), -h * (1 - mine) * q.cy * (1 - P.t)]);
+          if (mine < 1 && !P.v.attach && !P.v.lead) moves.push([P.v, -h * (1 - mine) * q.cx * P.t, -h * (1 - mine) * q.cy * P.t]);
+        }
+      }));
+      if (!moves.length && iter > 10) break;
+      for (const [q, x, y] of moves) { q.ax = (q.ax || 0) + x; q.ay = (q.ay || 0) + y; }
+      /* part way through, the pushes are evened out along each line; the rounds after that restore the spacing */
+      if (iter === 3 || iter === 7 || iter === 10) everyStrand(strand => {
+        const ax = strand.map(q => q.ax || 0), ay = strand.map(q => q.ay || 0), n = strand.length, W = 2;
+        strand.forEach((q, i) => { if (!free(q)) return; let x = 0, y = 0, c = 0; for (let m = Math.max(0, i - W); m <= Math.min(n - 1, i + W); m++) { x += ax[m]; y += ay[m]; c++; } q.ax = x / c; q.ay = y / c; });
+      });
+    }
+    everyStrand(strand => strand.forEach(q => {            /* same-colour twins take their leader's offset */
+      if (!free(q)) return; const o = twin(q); if (!o) return; const P = onto(q, o); if (!P || P.d > 0.15) return;
+      q.ax = (P.u.ax || 0) + P.t * ((P.v.ax || 0) - (P.u.ax || 0)); q.ay = (P.u.ay || 0) + P.t * ((P.v.ay || 0) - (P.u.ay || 0));
+    }));
+  }
+  /* a branch leaves from exactly where its trunk is drawn (the trunk's eased lane), and its easing points slide from
+     the trunk's lane to the branch's own, so the split is one clean peel */
+  strands.forEach(list => list.forEach(strand => {
+    const peel = order => {
+      const A = order[0]; if (!A.attach) return;
+      A.ax = A.attach.ax || 0; A.ay = A.attach.ay || 0;
+      let h = 0; while (order[h + 1] && order[h + 1].lead) h++;
+      const B = order[h + 1]; if (!B) return;
+      for (let k = 1; k <= h; k++) { const f = k / (h + 1), t = f * f * (3 - 2 * f), q = order[k]; q.ax = A.ax + ((B.ax || 0) - A.ax) * t; q.ay = A.ay + ((B.ay || 0) - A.ay) * t; }
+    };
+    peel(strand); peel(strand.slice().reverse());
+    for (const q of strand) q[2] = Math.round((q.ax || 0) * 8) + ',' + Math.round((q.ay || 0) * 8);   /* simplification keeps points where the offset changes */
+  }));
+
+  /* End-of-line dots: a terminal is a service end that touches no other part of that service. The dot takes
+     the position and lane of the nearest drawn strand of its colour. */
+  const termini = [], byService = new Map();
+  routes.forEach((r, ri) => { if (r.dashed) return; if (!byService.has(r.service)) byService.set(r.service, []); byService.get(r.service).push(...work[ri].map(part => ({ part, r }))); });
+  for (const list of byService.values()) list.forEach(({ part, r }, pi) => {
+    if (part.length < 10) return;
+    for (const end of [part[0], part[part.length - 1]]) {
+      if (list.some((o, oi) => oi !== pi && o.part.some(q => Math.hypot(q[0] - end[0], q[1] - end[1]) < 5))) continue;
+      let best = null, bd = 8; around(drawn[r.ci], end, o => { if (o.gone) return; const d = Math.hypot(o[0] - end[0], o[1] - end[1]); if (d < bd) { bd = d; best = o; } });
+      const t = best ? { x: best[0], y: best[1], ax: best.ax || 0, ay: best.ay || 0, color: r.color, key: r.key, co: r.co, q: best } : { x: end[0], y: end[1], ax: 0, ay: 0, color: r.color, key: r.key, co: r.co };
+      if (best && best.st) t.inward = best.st[best.i < best.st.length / 2 ? Math.min(best.st.length - 1, best.i + 3) : Math.max(0, best.i - 3)];   /* the way the line runs from its end */
+      if (!termini.some(o => o.color === t.color && o.key === t.key && Math.hypot(o.x - t.x, o.y - t.y) < 3)) termini.push(t);
+    }
+  });
+  /* at a split, a service that takes the branch still sits within reach of the trunk for a few points past
+     the branch point, and so marks a short stub of trunk beyond it. Trim such a stub: walking along the
+     trunk from the branch point in the direction the branch leaves, a branch service that stops again within
+     a few points was never on that trunk. (A service that really runs both ways keeps the trunk.) */
+  strands.forEach(list => list.forEach(strand => {
+    const n = strand.length; if (n < 3) return;
+    for (const [end, step] of [[0, 1], [n - 1, -1]]) {
+      const pin = strand[end]; if (!pin.attach || !pin.attach.st) continue;
+      let b = end; while (b + step >= 0 && b + step < n && (strand[b + step].lead || strand[b + step].attach)) b += step;
+      const body = strand[b + step], lastLead = strand[b]; if (!body || !body.svcs) continue;
+      const T = pin.attach, tr = T.st, nx = tr[T.i + 1] || T, pv = tr[T.i - 1] || T;
+      const dir = ((lastLead[0] - T[0]) * (nx[0] - pv[0]) + (lastLead[1] - T[1]) * (nx[1] - pv[1])) >= 0 ? 1 : -1;
+      for (const s of body.svcs) {
+        let m = T.i + dir, run = 0; while (tr[m] && tr[m].svcs && tr[m].svcs.has(s)) { run++; m += dir; }
+        if (run && run <= 8 && tr[m]) for (let k = 1; k <= run; k++) tr[T.i + dir * k].svcs.delete(s);
+        /* the branch point itself carries the branch's services towards the shared side, so the one
+           segment from it onto the shared trunk is not lost (a segment counts by its first point) */
+        const shared = tr[T.i - dir];
+        if (dir === -1 && shared && shared.svcs && shared.svcs.has(s)) (T.svcs || (T.svcs = new Set())).add(s);
+      }
+    }
+  }));
+  /* services per drawn point: fill pin-holes (a covered point that matched a neighbour instead) so a single
+     service's highlight has no gaps, then a key per point so simplification keeps the points where it changes */
+  strands.forEach(list => list.forEach(strand => {
+    /* eased end points (and the pinned point before them) share the services of the strand body next to them */
+    const n = strand.length, isEnd = q => q.lead || q.attach;
+    let h = 0; while (h < n && isEnd(strand[h])) h++;
+    let t = n - 1; while (t >= 0 && isEnd(strand[t])) t--;
+    const share = (from, a, b) => { if (from && from.svcs) for (let m = a; m <= b; m++) for (const s of from.svcs) (strand[m].svcs || (strand[m].svcs = new Set())).add(s); };
+    if (h < n) { share(strand[h], 0, h - 1); share(strand[t], t + 1, n - 1); }
+    const all = new Set(); for (const q of strand) if (q.svcs) for (const s of q.svcs) all.add(s);
+    for (const s of all) for (let i = 0; i < strand.length;) {
+      if (strand[i].svcs && strand[i].svcs.has(s)) { i++; continue; }
+      let j = i; while (j + 1 < strand.length && !(strand[j + 1].svcs && strand[j + 1].svcs.has(s))) j++;
+      if (i > 0 && j < strand.length - 1 && j - i + 1 <= 4) for (let m = i; m <= j; m++) (strand[m].svcs || (strand[m].svcs = new Set())).add(s);
+      i = j + 1;
+    }
+    for (const q of strand) q.sk = q.svcs ? [...q.svcs].sort().join(' ') : '';
+  }));
+  return { strands, parts: work, termini };
+}
+/* The linework that is drawn comes ready-made from map-lines.js (built by lines.py: true track positions, straight
+   runs and circular arcs, lanes already worked out). cleanLines() only puts it into the shape paint() expects: per
+   route a list of strands, each point [x, y] with .ax/.ay (lane times unit normal) and .svcs (services on it).
+   bundle() above is still used for the two zoomed-out bundlings ('mid', 'far') the lines slide to. */
+function cleanLines(L) {
+  const strands = routes.map(() => []), parts = routes.map(() => []), termini = [];
+  const elRoute = name => routes.findIndex(r => r.dashed && r.label.startsWith(name + ','));
+  const made = L.strands.map(s => {
+    /* by line group, not colour alone: the Staten Island Railway shares the A/C/E blue but is its own group */
+    const first = (s.s.find(x => x[1]) || [0, ''])[1].split(' ')[0], grp = first && keyOf(first);
+    const ri = s.el ? elRoute(s.el) : routes.findIndex(r => !r.dashed && (grp ? r.key === grp : r.color === s.c)), n = s.p.length / 4, st = [];
+    for (let i = 0; i < n; i++) { const q = [s.p[4 * i], s.p[4 * i + 1]]; q.ax = s.p[4 * i + 2]; q.ay = s.p[4 * i + 3]; q.st = st; q.i = i; st.push(q); }
+    s.s.forEach(([from, list], k) => { const set = new Set(list ? list.split(' ') : []), to = k + 1 < s.s.length ? s.s[k + 1][0] : n; for (let i = from; i < to; i++) { st[i].svcs = set; st[i].sk = list; } });
+    for (let i = 0; i < n; i++) {
+      const a = st[Math.max(0, i - 1)], b = st[Math.min(n - 1, i + 1)], len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; st[i].dx = (b[0] - a[0]) / len; st[i].dy = (b[1] - a[1]) / len;
+      /* a point where the lane is changing keeps its own key, so zoomed-out simplification cannot drop it */
+      if (i + 1 < n && (st[i + 1].ax !== st[i].ax || st[i + 1].ay !== st[i].ay)) { st[i].sk += '~' + i; st[i + 1].sk += '~' + (i + 1); }
+    }
+    if (ri >= 0) strands[ri].push(st);
+    return st;
+  });
+  for (const p of L.paths) {
+    const ri = p.el ? elRoute(p.svc) : routes.findIndex(r => !r.dashed && r.service === p.svc); if (ri < 0) continue;
+    const part = []; for (let i = 0; i < p.p.length; i += 2) part.push([p.p[i], p.p[i + 1]]); parts[ri].push(part);
+  }
+  for (const t of L.termini) {
+    const q = made[t.st][t.i], r = routes.find(r => !r.dashed && r.service === t.svc); if (!q || !r) continue;
+    termini.push({ x: q[0], y: q[1], ax: q.ax, ay: q.ay, color: r.color, key: r.key, co: r.co, q });
+  }
+  return { strands, parts, termini };
+}
+const variants = { near: window.MAP_LINES ? cleanLines(window.MAP_LINES) : bundle(2.2), mid: null, far: null };
+routes.forEach((r, ri) => { r.parts = variants.near.parts[ri]; });      /* hover hit-testing follows the 'near' centrelines */
+/* Zooming out, lines a block or two apart would print on top of each other, so there are two more bundlings with a
+   wider reach: 'mid' and 'far'. The map does not switch between them (the lines used to jump at the switch):
+   the 'near' linework is always the one drawn, and each of its points also knows where it would sit in 'mid' and in
+   'far' (mapOnto). Between MID_FROM and MID_FULL px per map unit the lines slide from their 'near' places to the 'mid'
+   ones, and between FAR_FROM and FAR_FULL on to the 'far' ones. */
+const MID_FROM = 3.0, MID_FULL = 1.7, FAR_FROM = 1.3, FAR_FULL = 1.0;
+function mapOnto(name) {
+  const T = variants[name], C = 4, grids = lineColors.map(() => new Map());
+  T.strands.forEach((list, ri) => { const g = grids[routes[ri].ci]; list.forEach(st => st.forEach((o, i) => {
+    o.mst = st; o.mi = i; const key = Math.floor(o[0] / C) + ',' + Math.floor(o[1] / C); if (!g.has(key)) g.set(key, []); g.get(key).push(o);
+  })); });
+  const onto = (ci, q) => {                               /* q's place on the nearest strand of its colour running the same way */
+    let best = null, bd = 7; const cx = Math.floor(q[0] / C), cy = Math.floor(q[1] / C), g = grids[ci];
+    for (let gx = cx - 2; gx <= cx + 2; gx++) for (let gy = cy - 2; gy <= cy + 2; gy++) for (const o of g.get(gx + ',' + gy) || []) {
+      if (q.dx !== undefined && Math.abs(o.dx * q.dx + o.dy * q.dy) < 0.6) continue;
+      const d = Math.hypot(o[0] - q[0], o[1] - q[1]); if (d < bd) { bd = d; best = o; }
+    }
+    if (!best) return null;
+    let out = null, od = Infinity;
+    for (const [a, b] of [[best.mst[best.mi - 1], best], [best, best.mst[best.mi + 1]]]) {
+      if (!a || !b) continue;
+      const dx = b[0] - a[0], dy = b[1] - a[1], len = dx * dx + dy * dy, t = len ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / len)) : 0;
+      const x = a[0] + t * dx, y = a[1] + t * dy, d = Math.hypot(x - q[0], y - q[1]);
+      if (d < od) { od = d; out = { x, y, ax: (a.ax || 0) + t * ((b.ax || 0) - (a.ax || 0)), ay: (a.ay || 0) + t * ((b.ay || 0) - (a.ay || 0)) }; }
+    }
+    return out || { x: best[0], y: best[1], ax: best.ax || 0, ay: best.ay || 0 };
+  };
+  variants.near.strands.forEach((list, ri) => list.forEach(st => {
+    const ci = routes[ri].ci, m = st.map(q => onto(ci, q) || { x: q[0], y: q[1], ax: q.ax || 0, ay: q.ay || 0 });
+    /* the shift is smoothed along the line, so a point that matched a different strand than its neighbours makes no kink */
+    const W = 3, n = st.length;
+    st.forEach((q, i) => {
+      let dx = 0, dy = 0, ax = 0, ay = 0, c = 0;
+      for (let j = Math.max(0, i - W); j <= Math.min(n - 1, i + W); j++) { dx += m[j].x - st[j][0]; dy += m[j].y - st[j][1]; ax += m[j].ax; ay += m[j].ay; c++; }
+      q[name] = { x: q[0] + dx / c, y: q[1] + dy / c, ax: ax / c, ay: ay / c };
+    });
+  }));
+}
+const SLIDE = !window.MAP_LINES;                          /* the ready-made linework stays on its true track at every zoom */
+function variantFor(k) {                                  /* makes sure the wider bundlings exist by the time they are needed */
+  if (!SLIDE) return 'near';
+  if (k < MID_FROM + 0.4 && !variants.mid) { variants.mid = bundle(3.6); mapOnto('mid'); }
+  if (k < FAR_FROM + 0.2 && !variants.far) { variants.far = bundle(Math.min(5, Math.max(2.2, 2.6 / Math.max(fitK, 0.3)))); mapOnto('far'); }
+  return 'near';
+}
+/* Close in, side-by-side lanes get a little more room. A line drawn one lane beside another follows its own copy of
+   that line's points, which can sit up to half a metre off it on bends; at the old closest zoom that was invisible,
+   at the closest zooms added on 13 Nov 2026 (up to ~8 px per metre) it ate into the white gap and the lines
+   overlapped. Beyond LANE_EXTRA_K px per map unit the lane spacing grows by LANE_EXTRA px per doubling of the zoom.
+   Used by paint() and by live.js (trains, station dots). */
+const LANE_EXTRA_K = 90, LANE_EXTRA = 2.5;
+const laneExtra = k => Math.max(0, Math.log2(k / LANE_EXTRA_K)) * LANE_EXTRA;
+const ramp = (k, from, full) => { const t = Math.max(0, Math.min(1, (from - k) / (from - full))); return t * t * (3 - 2 * t); };
+
+/* Stylized coast: a heavily simplified outline, rounded by running a curve through the midpoints of its segments */
+function smoothPath(raw, closed) {
+  const p = raw.map(q => px(q[0], q[1])), f = v => v.toFixed(1), mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  if (p.length < 3) return 'M' + p.map(q => f(q[0]) + ' ' + f(q[1])).join('L');
+  let d = '';
+  if (closed) {
+    const n = p.length, m0 = mid(p[n - 1], p[0]); d = 'M' + f(m0[0]) + ' ' + f(m0[1]);
+    for (let i = 0; i < n; i++) { const m = mid(p[i], p[(i + 1) % n]); d += 'Q' + f(p[i][0]) + ' ' + f(p[i][1]) + ' ' + f(m[0]) + ' ' + f(m[1]); }
+    return d + 'Z';
+  }
+  d = 'M' + f(p[0][0]) + ' ' + f(p[0][1]);
+  for (let i = 1; i < p.length - 1; i++) { const m = i === p.length - 2 ? p[i + 1] : mid(p[i], p[i + 1]); d += 'Q' + f(p[i][0]) + ' ' + f(p[i][1]) + ' ' + f(m[0]) + ' ' + f(m[1]); }
+  return d;
+}
+const coastPath = new Path2D(DATA.coast.map(c => smoothPath(c.pts, c.closed)).join(''));
+const BORO_AT = { 'Manhattan': [-73.9655, 40.7825, -61], 'Bronx': [-73.855, 40.853, 0], 'Queens': [-73.80, 40.725, 0], 'Brooklyn': [-73.945, 40.635, 0], 'Staten Island': [-74.15, 40.58, 0] };
+const labels = Object.entries(BORO_AT).map(([name, [lon, lat, rot]]) => { const [x, y] = px(lon, lat); return { text: name.toUpperCase(), x, y, rot: rot * Math.PI / 180 }; });
+
+/* Substation icons */
+/* Cross-hatch for the underground icon: two sets of lines at +45 and -45 degrees, like the diamond tread
+   on steel sidewalk hatches, clipped to the icon's square. */
+const HATCH = (() => {
+  const H = 5.5, m = 1, step = 3.4 / Math.cos(Math.PI / 4), f = v => v.toFixed(2); let d = '';
+  for (const sign of [1, -1]) for (let c = -Math.floor((H + H * m) / step) * step; c <= H + H * m; c += step) {
+    /* line y = sign*m*x + c, clipped to the square */
+    const pts = [];
+    for (const x of [-H, H]) { const y = sign * m * x + c; if (y >= -H && y <= H) pts.push([x, y]); }
+    for (const y of [-H, H]) { const x = (y - c) / (sign * m); if (x > -H && x < H) pts.push([x, y]); }
+    if (pts.length >= 2) d += 'M' + f(pts[0][0]) + ' ' + f(pts[0][1]) + 'L' + f(pts[1][0]) + ' ' + f(pts[1][1]);
+  }
+  return d;
+})();
+/* clip paths for the colour slices of a multi-line icon: n equal strips across the icon's body, the outer
+   strips reaching past the outline so its stroke is kept */
+const sliceDefs = el('defs', {}, svg), sliceIds = new Set();
+function sliceClip(kind, n, j) {
+  const id = `slice-${kind}-${n}-${j}`;
+  if (!sliceIds.has(id)) {
+    sliceIds.add(id);
+    const half = ICON_STYLE === 'filled' ? FILLED_HALF : kind === 'building' ? 7 : 5.5, wd = 2 * half / n, x0 = j ? -half + j * wd : -half - 3, x1 = j === n - 1 ? half + 3 : -half + (j + 1) * wd;
+    el('rect', { x: x0, y: -10, width: x1 - x0, height: 20 }, el('clipPath', { id, clipPathUnits: 'userSpaceOnUse' }, sliceDefs));
+  }
+  return id;
+}
+/* Two icon styles. 'filled' (current, 13 Nov 2026): above ground a solid square of the line colour with a small
+   square inside in the status colour; underground a solid circle with an X in the status colour, and no corner
+   dot. 'outline' is the earlier style (white body, coloured outline, status dot at the corner), kept as a backup:
+   set ICON_STYLE = 'outline' to go back to it. */
+const ICON_STYLE = 'filled';
+const FILLED_HALF = 6.5;                                  /* half the side of the square / radius of the circle */
+function drawIcon(g, kind, color) { return ICON_STYLE === 'filled' ? drawIconFilled(g, kind, color) : drawIconOutline(g, kind, color); }
+function drawIconFilled(g, kind, color) {
+  const h = FILLED_HALF;
+  if (kind === 'building') el('rect', { class: 'fbody', x: -h, y: -h, width: 2 * h, height: 2 * h, fill: color }, g);
+  else el('circle', { class: 'fbody', r: h + 0.5, fill: color }, g);
+}
+/* the status mark of a filled icon, drawn once on top of the (possibly sliced) body; status 'blank' is white */
+function drawStatus(g, kind, status) {
+  if (kind === 'building') { const q = 2.7; el('rect', { class: 'stat ' + status, x: -q, y: -q, width: 2 * q, height: 2 * q }, g); }
+  else el('circle', { class: 'stat ' + status, r: 3.1 }, g);   /* an X until 13 Nov 2026 (.statx in the CSS) */
+}
+function drawIconOutline(g, kind, color) {
+  if (kind === 'building') {
+    el('rect', { class: 'body', x: -7, y: -5.5, width: 14, height: 11, stroke: color }, g);
+    el('path', { class: 'detail', stroke: color, d: 'M-4.5 -2.6H4.5M-4.5 0H4.5M-2.2 -3.6V1M0 -3.6V1M2.2 -3.6V1M-1.5 5.5V2.6H1.5V5.5' }, g);
+  } else {
+    el('rect', { class: 'body', x: -5.5, y: -5.5, width: 11, height: 11, stroke: color }, g);
+    el('path', { class: 'detail', stroke: color, 'stroke-width': 0.7, d: HATCH }, g);
+  }
+}
+const tip = document.getElementById('tip');
+/* Route bullets as on subway signage: a coloured disc with the route letter or number (black on yellow) */
+function bulletEl(service, color) {
+  const b = document.createElement('span'); b.className = 'bullet' + (service.length > 1 ? ' wide' : '');
+  b.textContent = service; b.style.background = color; if (color === '#FCCC0A') b.style.color = '#000';
+  return b;
+}
+function showTip(ev, items) {
+  tip.replaceChildren(...items.map(([text, color, bullet]) => {
+    const d = document.createElement('div');
+    if (bullet) { d.className = 'withbullet'; d.appendChild(bulletEl(bullet, color)); }
+    const t = document.createElement('span'); t.textContent = text; if (color) t.style.color = color; d.appendChild(t);
+    return d;
+  }));
+  tip.style.display = 'block';
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(ev.clientX + 12, innerWidth - w - 6) + 'px'; tip.style.top = Math.min(ev.clientY + 12, innerHeight - h - 6) + 'px';
+}
+const hideTip = () => { tip.style.display = 'none'; };
+const subs = DATA.substations.map((s, i) => {
+  const [x, y] = px(s.lon, s.lat);
+  const g = el('g', { class: 'sub', tabindex: 0, role: 'button', 'aria-label': s.name }, gSubs);
+  el('rect', { class: 'hit', x: -10, y: -10, width: 20, height: 20 }, g);
+  const colors = s.lines.length ? s.lines.map(k => GROUP_COLOR[k] || UNCONFIRMED) : [UNCONFIRMED];
+  /* a substation feeding several colour groups is drawn in vertical slices, one colour each, main line on the left */
+  const lotg = s.kind === 'building' ? el('g', { class: 'lotg', style: 'display:none' }, g) : null;   /* its tax lot, filled in when snapped (see Lots) */
+  const ico = el('g', { class: 'ico' }, g);
+  if (colors.length === 1) drawIcon(ico, s.kind, colors[0]);
+  else colors.forEach((c, j) => drawIcon(el('g', { 'clip-path': `url(#${sliceClip(s.kind, colors.length, j)})` }, ico), s.kind, c));
+  let stat = null;
+  if (ICON_STYLE === 'filled') { stat = el('g', { class: 'statg' }, g); drawStatus(stat, s.kind, s.status); el('circle', { class: 'ring', r: s.kind === 'building' ? 11 : 10 }, g); }
+  else {
+    el('circle', { class: 'ring', r: s.kind === 'building' ? 11.5 : 10.5 }, g);
+    el('circle', { class: 'dot ' + s.status, cx: s.kind === 'building' ? 8 : 6.5, cy: -6.5, r: 2.8 }, g);
+  }
+  g.addEventListener('click', ev => { ev.stopPropagation(); if (!moved) openSheet(i); });
+  g.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openSheet(i); } });
+  const sub = { g, x, y, data: s, on: true, lotg, ico, stat, colors, lot: undefined, snap: 0 };
+  g.addEventListener('mousemove', ev => {
+    ev.stopPropagation();
+    if (!hot || hot.sub !== sub) { hot = { sub, names: [] }; if (roadAlpha(view.k)) draw(); }   /* the repaint is only for the street labels */
+    const items = [[s.name + ' — ' + STATUS_LABEL[s.status].toLowerCase(), '']];
+    if (hot.names.length) items.push([hot.names.join(' & '), '#000']);
+    showTip(ev, items);
+    /* street labels keep clear of this box, so re-place them whenever it moves */
+    const box = tip.getBoundingClientRect(), old = hot.avoid;
+    if (!old || Math.abs(old.left - box.left) > 2 || Math.abs(old.top - box.top) > 2 || Math.abs(old.right - box.right) > 2) { hot.avoid = box; if (roadAlpha(view.k)) apply(); }
+  });
+  g.addEventListener('mouseleave', () => { hideTip(); if (hot) { hot = null; apply(); } });
+  return sub;
+});
+
+/* ---------- Streets ----------
+   Grey street lines for the whole city, cut into square tiles (roads/<x>_<y>.json, from
+   2_build_scripts_and_raw_data/streets.py). They fade in only when zoomed far in, and only the tiles covering the
+   window are fetched, then kept. All one light grey; the width follows the street's class (expressway, avenue,
+   ..., side street; r.wm, in metres, already wider where a divided road was merged into one line). */
+const ROADS_V = 18;                                       /* bump when roads/ or coast/ are rebuilt (cache) */
+const ROADS_FROM = 17, ROADS_FULL = 26;                /* px per map unit: start of fade-in, fully shown */
+const TILE = 40, tiles = new Map(); let tileIndex = null, indexRequested = false;
+const roadAlpha = k => Math.max(0, Math.min(1, (k - ROADS_FROM) / (ROADS_FULL - ROADS_FROM)));
+/* drawn width: a side street (9 m) at ROAD_SCALE of its real width (about 1.8 px when the streets are fully shown);
+   wider streets grow a little faster than their real width (power ROAD_CONTRAST), so the hierarchy reads clearly;
+   never under ROAD_MIN px */
+const ROAD_SCALE = 0.43, ROAD_CONTRAST = 1.15, ROAD_MIN = 1.5;
+const roadPx = (wm, k) => Math.max(ROAD_MIN, 9 * k / 55.66 * ROAD_SCALE * Math.pow(wm / 9, ROAD_CONTRAST));
+function visibleTiles(want) {
+  /* tiles covering the window plus one tile of margin (a street is filed under the tile at its middle) */
+  const k = view.k, out = [];
+  const tx0 = Math.floor(-view.tx / k / TILE) - 1, tx1 = Math.floor((size.w - view.tx) / k / TILE) + 1, ty0 = Math.floor(-view.ty / k / TILE) - 1, ty1 = Math.floor((size.h - view.ty) / k / TILE) + 1;
+  for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) {
+    const key = tx + '_' + ty; if (!tileIndex || !tileIndex.has(key)) continue;
+    const t = tiles.get(key);
+    if (t && t.roads) out.push(t);
+    else if (!t && want) {
+      tiles.set(key, {});
+      fetch('roads/' + key + '.json?v=' + ROADS_V).then(r => r.json()).then(list => {
+        tiles.get(key).roads = list.map(([name, flat, cls = 5, wm = 9]) => {
+          let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+          for (let i = 0; i < flat.length; i += 2) { x0 = Math.min(x0, flat[i]); x1 = Math.max(x1, flat[i]); y0 = Math.min(y0, flat[i + 1]); y1 = Math.max(y1, flat[i + 1]); }
+          return { name, flat, cls, wm, x0, y0, x1, y1 };
+        });
+        apply();
+      }).catch(() => tiles.delete(key));
+    }
+  }
+  return out;
+}
+function loadTileIndex() {
+  if (indexRequested) return; indexRequested = true;
+  fetch('roads/index.json?v=' + ROADS_V).then(r => r.json()).then(list => { tileIndex = new Set(list); apply(); }).catch(() => { indexRequested = false; });   /* asked again at the next redraw */
+}
+/* ---------- Lots ----------
+   Tax-lot lines (lots/<x>_<y>.json, LOT_TILE map units square, from 2_build_scripts_and_raw_data/lots.py, MapPLUTO)
+   within about 400 m of every substation. They fade in at the closest zoom, in the street grey but thinner. Past
+   that, each above-ground substation's icon gives way to its own lot (lots/subs.json), filled in its line colour(s)
+   with the status mark at the lot's middle; underground substations keep their icon. */
+const LOTS_V = 1;                                         /* bump when lots/ is rebuilt */
+const MAX_K = 450;                                        /* px per map unit at the closest zoom (about 8 px per metre) */
+const LOTS_FROM = 80, LOTS_FULL = 120, SNAP_FROM = 130, SNAP_FULL = 190;
+const LOT_TILE = 10, LOT_PX = 1.2;                        /* lot line width in px */
+const lotTiles = new Map(); let lotIndex = null, lotIndexAsked = false, subLots = null, subLotsAsked = false;
+const lotAlpha = k => Math.max(0, Math.min(1, (k - LOTS_FROM) / (LOTS_FULL - LOTS_FROM)));
+const snapT = k => { const t = Math.max(0, Math.min(1, (k - SNAP_FROM) / (SNAP_FULL - SNAP_FROM))); return t * t * (3 - 2 * t); };
+function visibleLots() {
+  if (!lotIndex) { if (!lotIndexAsked) { lotIndexAsked = true; fetch('lots/index.json?v=' + LOTS_V).then(r => r.json()).then(l => { lotIndex = new Set(l); apply(); }).catch(() => { lotIndexAsked = false; }); } return []; }
+  const k = view.k, out = [];
+  const tx0 = Math.floor(-view.tx / k / LOT_TILE) - 1, tx1 = Math.floor((size.w - view.tx) / k / LOT_TILE) + 1, ty0 = Math.floor(-view.ty / k / LOT_TILE) - 1, ty1 = Math.floor((size.h - view.ty) / k / LOT_TILE) + 1;
+  for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) {
+    const key = tx + '_' + ty; if (!lotIndex.has(key)) continue;
+    const t = lotTiles.get(key);
+    if (t && t.path) out.push(t.path);
+    else if (!t) {
+      lotTiles.set(key, {});
+      fetch('lots/' + key + '.json?v=' + LOTS_V).then(r => r.json()).then(rings => {
+        const p = new Path2D();
+        for (const f of rings) { p.moveTo(f[0], f[1]); for (let i = 2; i < f.length; i += 2) p.lineTo(f[i], f[i + 1]); p.closePath(); }
+        lotTiles.get(key).path = p; apply();
+      }).catch(() => lotTiles.delete(key));
+    }
+  }
+  return out;
+}
+/* each above-ground substation's lot, as an SVG path in map units relative to its point (scaled with the zoom) */
+function loadSubLots() {
+  if (subLotsAsked) return; subLotsAsked = true;
+  fetch('lots/subs.json?v=' + LOTS_V).then(r => r.json()).then(m => {
+    subLots = m;
+    const gradDefs = el('defs', {}, svg);
+    subs.forEach((s, i) => {
+      if (!s.lotg) return;
+      const L = m[s.data.lat.toFixed(5) + ',' + s.data.lon.toFixed(5)]; s.lot = L || null; if (!L) return;
+      const f = v => v.toFixed(3);
+      const d = L.rings.map(r => { let q = 'M' + f(r[0] - s.x) + ' ' + f(r[1] - s.y); for (let j = 2; j < r.length; j += 2) q += 'L' + f(r[j] - s.x) + ' ' + f(r[j + 1] - s.y); return q + 'Z'; }).join('');
+      let fill = s.colors[0];
+      if (s.colors.length > 1) {                        /* several lines: equal vertical bands across the lot, as on the icon */
+        let xa = Infinity, xb = -Infinity; for (const r of L.rings) for (let j = 0; j < r.length; j += 2) { xa = Math.min(xa, r[j] - s.x); xb = Math.max(xb, r[j] - s.x); }
+        const gr = el('linearGradient', { id: 'lotfill' + i, gradientUnits: 'userSpaceOnUse', x1: xa, y1: 0, x2: xb, y2: 0 }, gradDefs);
+        s.colors.forEach((c, j) => { el('stop', { offset: j / s.colors.length, 'stop-color': c }, gr); el('stop', { offset: (j + 1) / s.colors.length, 'stop-color': c }, gr); });
+        fill = `url(#lotfill${i})`;
+      }
+      el('path', { class: 'lotp', d, fill, 'fill-rule': 'evenodd' }, s.lotg);
+    });
+    s_snapDirty = true; apply();
+  }).catch(() => { subLotsAsked = false; });
+}
+let s_snapDirty = false;
+
+/* Accurate coast (coast/<x>_<y>.json, same tiling as the streets). As the streets fade in, the simplified outline
+   morphs into it: each accurate point starts on the simplified line (its stored target) and slides out to its
+   real place, so piers and creeks crinkle out of the smooth shore, and bridge decks (drawn into the accurate coast
+   by outline.py) grow out from both shores and meet in the middle. */
+const coastTiles = new Map(); let coastIndex = null, coastIndexAsked = false;
+const coastMorph = k => { const t = Math.max(0, Math.min(1, (k - ROADS_FROM) / (ROADS_FULL - ROADS_FROM))); return t * t * (3 - 2 * t); };
+function visibleCoast() {
+  /* the coast chunks covering the window, or null while some are still loading (the simplified line is drawn then) */
+  if (!coastIndex) { if (!coastIndexAsked) { coastIndexAsked = true; fetch('coast/index.json?v=' + ROADS_V).then(r => r.json()).then(l => { coastIndex = new Set(l); apply(); }).catch(() => { coastIndexAsked = false; }); } return null; }
+  const k = view.k, out = []; let ready = true;
+  const tx0 = Math.floor(-view.tx / k / TILE) - 1, tx1 = Math.floor((size.w - view.tx) / k / TILE) + 1, ty0 = Math.floor(-view.ty / k / TILE) - 1, ty1 = Math.floor((size.h - view.ty) / k / TILE) + 1;
+  for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) {
+    const key = tx + '_' + ty; if (!coastIndex.has(key)) continue;
+    const t = coastTiles.get(key);
+    if (t && t.chunks) { out.push(...t.chunks); continue; }
+    if (tx > tx0 && tx < tx1 && ty > ty0 && ty < ty1) ready = false;   /* the one-tile margin is fetched ahead but not waited for */
+    if (!t) {
+      coastTiles.set(key, {});
+      fetch('coast/' + key + '.json?v=' + ROADS_V).then(r => r.json()).then(list => {
+        coastTiles.get(key).chunks = list.map(([a, b]) => {
+          let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+          for (const f of [a, b]) for (let i = 0; i < f.length; i += 2) { x0 = Math.min(x0, f[i]); x1 = Math.max(x1, f[i]); y0 = Math.min(y0, f[i + 1]); y1 = Math.max(y1, f[i + 1]); }
+          return { a, b, x0, y0, x1, y1 };
+        });
+        apply();
+      }).catch(() => coastTiles.delete(key));
+    }
+  }
+  return ready ? out : null;
+}
+function roadsAt(sx, sy) {
+  if (!roadAlpha(view.k)) return [];
+  const k = view.k, x = (sx - view.tx) / k, y = (sy - view.ty) / k, tol = 4 / k, names = new Map();
+  for (const t of visibleTiles(false)) for (const r of t.roads) {
+    if (!r.name || x < r.x0 - tol || x > r.x1 + tol || y < r.y0 - tol || y > r.y1 + tol) continue;
+    const f = r.flat;
+    for (let i = 2; i < f.length; i += 2) { const d = distToSeg(x, y, [f[i - 2], f[i - 1]], [f[i], f[i + 1]]); if (d <= tol && d < (names.get(r.name) ?? Infinity)) names.set(r.name, d); }
+  }
+  return [...names].sort((a, b) => a[1] - b[1]).slice(0, 2).map(([name]) => [name, '#777']);
+}
+
+/* The street (or the two streets, at a corner) a substation sits on: the nearest named street, plus any
+   other within about 25 m. Only known once the street tiles around it are loaded. */
+let hot = null;                                         /* { sub, names } while a substation is hovered */
+const roadLayer = document.createElement('canvas'), roadCtx = roadLayer.getContext('2d');
+function streetsOf(sub) {
+  if (sub.streets) return sub.streets;
+  const near = new Map(); let loaded = false;
+  for (const t of visibleTiles(false)) for (const r of t.roads) {
+    loaded = true;
+    if (!r.name || sub.x < r.x0 - 1.5 || sub.x > r.x1 + 1.5 || sub.y < r.y0 - 1.5 || sub.y > r.y1 + 1.5) continue;
+    const f = r.flat;
+    for (let i = 2; i < f.length; i += 2) { const d = distToSeg(sub.x, sub.y, [f[i - 2], f[i - 1]], [f[i], f[i + 1]]); if (d < (near.get(r.name) ?? 1.5)) near.set(r.name, d); }
+  }
+  const ranked = [...near].sort((a, b) => a[1] - b[1]);
+  const names = ranked.filter(([, d], i) => i === 0 || d <= Math.max(ranked[0][1] + 0.35, 0.5)).slice(0, 2).map(([n]) => n);
+  const tx = Math.floor(sub.x / TILE), ty = Math.floor(sub.y / TILE); let all = !!tileIndex;
+  for (let a = tx - 1; all && a <= tx + 1; a++) for (let b = ty - 1; b <= ty + 1; b++) { const key = a + '_' + b; if (tileIndex.has(key) && !(tiles.get(key) || {}).roads) all = false; }
+  if (loaded && all && names.length) sub.streets = names;   /* kept only when no tile around it is still on its way */
+  return names;
+}
+
+let highlight = null;                                    /* legend selection being hovered (see routeIn) */
+let highlightSvc = null;                                 /* one service (e.g. '1') picked out from its legend bullet */
+let isolate = null;     /* legend selection clicked: only its lines and substations are drawn */
+/* The drawn linework a single service runs on. Strands are merged per colour, so a service has no strand of
+   its own along shared track; instead bundle() records on every drawn point which services use it (pts[4]),
+   and this keeps the stretches whose points include the service. Cached per variant + level. */
+const svcCache = {};
+function svcRuns(svc, level, variant) {
+  const slot = svc + '|' + variant + level;
+  if (svcCache[slot]) return svcCache[slot];
+  const color = (routes.find(r => !r.dashed && r.service === svc) || {}).color, out = [];
+  for (const r of routes) {
+    if (r.dashed || r.color !== color) continue;
+    for (const run of runsOf(r, level, variant)) {
+      let cur = [];
+      const flush = () => { if (cur.length >= 2) { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const [x, y] of cur) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); } out.push({ x0, y0, x1, y1, pts: cur }); } cur = []; };
+      /* runsOf() splits simplification wherever the set of services changes, so every original point along a
+         segment shares its first vertex's services: a segment belongs to the service if its first vertex does */
+      const P = run.pts;
+      for (let i = 0; i < P.length - 1; i++) {
+        if (P[i][4] && P[i][4].has(svc)) { if (!cur.length) cur.push(P[i]); cur.push(P[i + 1]); } else flush();
+      }
+      flush();
+    }
+  }
+  return (svcCache[slot] = { color, runs: out });
+}
+/* ---------- Painting ---------- */
+const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
+let view = { k: 1, tx: 0, ty: 0 }, fitK = 1, size = { w: 0, h: 0 };
+const levelFor = k => LOD.findIndex(l => k < l.maxK);
+function paint() {
+  const { w, h } = size, dpr = window.devicePixelRatio || 1, k = view.k;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * view.tx, dpr * view.ty);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  const pad = 8 / k, x0 = -view.tx / k - pad, y0 = -view.ty / k - pad, x1 = (w - view.tx) / k + pad, y1 = (h - view.ty) / k + pad, level = levelFor(k);
+  /* streets first, under everything else, all one weight */
+  const ra = roadAlpha(k);
+  if (ra && !tileIndex) loadTileIndex();
+  if (ra && tileIndex) {
+    /* one stroke per width, all the same grey: where streets of different widths meet they merge into one shape.
+       Drawn on their own layer and laid on at the fade alpha, so overlapping strokes do not show darker. */
+    if (roadLayer.width !== canvas.width || roadLayer.height !== canvas.height) { roadLayer.width = canvas.width; roadLayer.height = canvas.height; }
+    const rc = roadCtx; rc.setTransform(1, 0, 0, 1, 0, 0); rc.clearRect(0, 0, roadLayer.width, roadLayer.height); rc.setTransform(ctx.getTransform());
+    rc.lineJoin = 'round'; rc.lineCap = 'round'; rc.strokeStyle = '#dcdcdc';
+    const byW = new Map();
+    for (const t of visibleTiles(true)) for (const r of t.roads) {
+      if (r.x1 < x0 || r.x0 > x1 || r.y1 < y0 || r.y0 > y1) continue;
+      let p = byW.get(r.wm); if (!p) byW.set(r.wm, p = new Path2D());
+      const f = r.flat; p.moveTo(f[0], f[1]); for (let i = 2; i < f.length; i += 2) p.lineTo(f[i], f[i + 1]);
+    }
+    for (const [wm, p] of byW) { rc.lineWidth = roadPx(wm, k) / k; rc.stroke(p); }
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = ra; ctx.drawImage(roadLayer, 0, 0); ctx.restore();
+    const la = lotAlpha(k);
+    if (la) {                                           /* tax-lot lines: the street grey, thinner */
+      ctx.save(); ctx.globalAlpha = la; ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = LOT_PX / k; ctx.lineJoin = 'miter';
+      for (const p of visibleLots()) ctx.stroke(p);
+      ctx.restore();
+    }
+    ctx.globalAlpha = ra;
+    if (hot) {                                          /* the hovered substation's street(s), in black */
+      const names = streetsOf(hot.sub); hot.names = names;
+      ctx.beginPath(); const nearest = new Map();        /* per street: the segment closest to the substation */
+      for (const t of visibleTiles(false)) for (const r of t.roads) {
+        if (!names.includes(r.name) || r.x1 < hot.sub.x - 15 || r.x0 > hot.sub.x + 15 || r.y1 < hot.sub.y - 15 || r.y0 > hot.sub.y + 15) continue;
+        const f = r.flat; ctx.moveTo(f[0], f[1]);
+        for (let i = 2; i < f.length; i += 2) {
+          ctx.lineTo(f[i], f[i + 1]);
+          const a = [f[i - 2], f[i - 1]], b = [f[i], f[i + 1]], d = distToSeg(hot.sub.x, hot.sub.y, a, b);
+          if (d < (nearest.get(r.name)?.d ?? Infinity)) nearest.set(r.name, { d, a, b });
+        }
+      }
+      /* a name label on each street, set a little way along it from the substation and turned to follow it */
+      ctx.font = '11px Helvetica, Arial, sans-serif'; if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+      const placed = [], avoid = hot.avoid;            /* the hover label's box, in window pixels */
+      hot.labels = [...nearest].map(([name, { a, b }], n) => {
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; let ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len;
+        if (ux < 0) { ux = -ux; uy = -uy; }
+        const t = (hot.sub.x - a[0]) * ux + (hot.sub.y - a[1]) * uy, half = ctx.measureText(name).width / 2 + 6;
+        /* try spots along the street on either side of the substation; take the first that is clear of the
+           hover label, the icon and any street label already placed */
+        const clear = (cx, cy) => {
+          for (let i = -4; i <= 4; i++) {
+            const sx = cx + ux * half * i / 4, sy = cy - 8 + uy * half * i / 4;
+            if (avoid && sx > avoid.left - 10 && sx < avoid.right + 10 && sy > avoid.top - 12 && sy < avoid.bottom + 12) return false;
+            if (placed.some(q => Math.hypot(q[0] - sx, q[1] - sy) < 16)) return false;
+          }
+          return true;
+        };
+        const order = n ? [-1, 1] : [1, -1]; let spot = null;
+        search: for (const dist of [half + 26, half + 70, half + 120, half + 180, half + 250]) for (const dir of order) {
+          const cx = (a[0] + ux * t) * k + view.tx + ux * dist * dir, cy = (a[1] + uy * t) * k + view.ty + uy * dist * dir;
+          if (clear(cx, cy)) { spot = [cx, cy]; break search; }
+        }
+        if (!spot) spot = [(a[0] + ux * t) * k + view.tx + ux * (half + 26) * order[0], (a[1] + uy * t) * k + view.ty + uy * (half + 26) * order[0]];
+        for (let i = -4; i <= 4; i++) placed.push([spot[0] + ux * half * i / 4, spot[1] - 8 + uy * half * i / 4]);
+        return { name, sx: spot[0], sy: spot[1], angle: Math.atan2(uy, ux) };
+      });
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 2.4 / k; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.setLineDash([]); ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5 / k;
+  { const m = k >= ROADS_FROM * 0.7 ? coastMorph(k) : 0, chunks = k >= ROADS_FROM * 0.7 ? visibleCoast() : null;   /* fetch a little early */
+    if (m > 0 && chunks) {
+      ctx.beginPath();
+      for (const c of chunks) {
+        if (c.x1 < x0 || c.x0 > x1 || c.y1 < y0 || c.y0 > y1) continue;
+        const a = c.a, b = c.b, u = 1 - m;
+        ctx.moveTo(b[0] * u + a[0] * m, b[1] * u + a[1] * m);
+        for (let i = 2; i < a.length; i += 2) ctx.lineTo(b[i] * u + a[i] * m, b[i + 1] * u + a[i + 1] * m);
+      }
+      ctx.stroke();
+    } else ctx.stroke(coastPath);
+  }
+  const variant = variantFor(k);
+  const weight = Math.min(4, Math.max(1.5, 1.5 + Math.log2(k / fitK) * 0.5));   /* lines thicken as you zoom in */
+  /* each line has a white casing; side-by-side lanes are spaced so the casings just meet, leaving an even white
+     gap between lines, and where lines cross, the one drawn later is cut out of the one below by its casing */
+  const casing = Math.max(1, weight * 0.45), gap = (weight + casing + laneExtra(k)) / k;
+  /* where a point is drawn: its place and lane in the 'near' linework, slid toward the wider bundlings when zoomed out */
+  const tm = variants.mid ? ramp(k, MID_FROM, MID_FULL) : 0, tf = variants.far ? ramp(k, FAR_FROM, FAR_FULL) : 0, slack = tm || tf ? 8 : 0;
+  let atX = 0, atY = 0;
+  const at = (tm || tf) ? p => {
+    const q = p[5]; let x = p[0], y = p[1], ax = p[2], ay = p[3];
+    if (q) {
+      if (tm && q.mid) { const m = q.mid; x += (m.x - x) * tm; y += (m.y - y) * tm; ax += (m.ax - ax) * tm; ay += (m.ay - ay) * tm; }
+      if (tf && q.far) { const m = q.far; x += (m.x - x) * tf; y += (m.y - y) * tf; ax += (m.ax - ax) * tf; ay += (m.ay - ay) * tf; }
+    }
+    atX = x + ax * gap; atY = y + ay * gap;
+  } : p => { atX = p[0] + p[2] * gap; atY = p[1] + p[3] * gap; };
+  const hl = highlightSvc ? null : highlight;          /* a single service overrides its whole colour */
+  const iso = isolate, isHl = r => !!hl && routeIn(r, hl);
+  const rank = r => (iso && routeIn(r, iso) ? 1 : 0) + (isHl(r) ? 2 : 0);   /* isolated and hovered lines paint last */
+  const order = hl || iso ? [0, 1, 2, 3].flatMap(n => routes.filter(r => rank(r) === n)) : routes;
+  const groups = new Map();                            /* colour groups in paint order: a colour's casing, then its line */
+  for (const r of order) {
+    if (routeHidden(r)) continue;                      /* layer switched off in the legend */
+    /* isolating hides every other line (a hovered legend entry still shows, as a preview) */
+    if (iso && !routeIn(r, iso) && !isHl(r)) continue;
+    const boost = isHl(r) ? 2.6 : 1;
+    let any = false; const path = new Path2D();
+    for (const run of runsOf(r, level, variant)) {
+      if (run.x1 < x0 - slack || run.x0 > x1 + slack || run.y1 < y0 - slack || run.y0 > y1 + slack) continue;
+      any = true; const p = run.pts; at(p[0]); path.moveTo(atX, atY);
+      /* curve through the midpoints so corners read as smooth bends */
+      at(p[1]); let px0 = atX, py0 = atY;
+      for (let i = 2; i < p.length; i++) {
+        at(p[i]); const qx = atX, qy = atY;
+        path.quadraticCurveTo(px0, py0, (px0 + qx) / 2, (py0 + qy) / 2); px0 = qx; py0 = qy;
+      }
+      path.lineTo(px0, py0);
+    }
+    if (!any) continue;
+    /* dotted els go under the subway lines; within each, a colour is painted as one group */
+    const key = rank(r) + (r.dashed ? 'a' : 'b') + r.color + '|' + boost;
+    if (!groups.has(key)) groups.set(key, { r, boost, paths: [] });
+    groups.get(key).paths.push(path);
+  }
+  for (const key of [...groups.keys()].sort((p, q) => p[0] - q[0] || (p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0))) {
+    const { r, boost, paths } = groups.get(key);
+    if (r.dashed) {
+      const dot = 1.8 + (weight - 1.5) * 0.6;          /* the dots grow with the zoom as the subway lines do (1.8 px zoomed out, about 3.3 px close in) */
+      ctx.setLineDash([0.1 / k, 2.1 * dot * boost / k]); ctx.lineWidth = dot * boost / k; ctx.strokeStyle = r.color;
+      for (const p of paths) ctx.stroke(p);
+      continue;
+    }
+    ctx.setLineDash([]);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = (weight * boost + 2 * casing) / k; for (const p of paths) ctx.stroke(p);
+    ctx.strokeStyle = r.color; ctx.lineWidth = weight * boost / k; for (const p of paths) ctx.stroke(p);
+  }
+  ctx.globalAlpha = 1;
+  if (highlightSvc && !hidden.subway) strokeSvc(highlightSvc, 2.6);      /* a single service, thickened over its own stretch of its colour's lines */
+  function strokeSvc(svc, boost) {
+    const { color, runs } = svcRuns(svc, level, variant);
+    ctx.beginPath();
+    for (const run of runs) {
+      if (run.x1 < x0 - slack || run.x0 > x1 + slack || run.y1 < y0 - slack || run.y0 > y1 + slack) continue;
+      const p = run.pts; at(p[0]); ctx.moveTo(atX, atY);
+      at(p[1]); let px0 = atX, py0 = atY;
+      for (let i = 2; i < p.length; i++) {
+        at(p[i]); const qx = atX, qy = atY;
+        ctx.quadraticCurveTo(px0, py0, (px0 + qx) / 2, (py0 + qy) / 2); px0 = qx; py0 = qy;
+      }
+      ctx.lineTo(px0, py0);
+    }
+    ctx.setLineDash([]); ctx.strokeStyle = '#fff'; ctx.lineWidth = (weight * boost + 2 * casing) / k; ctx.stroke();
+    ctx.strokeStyle = color; ctx.lineWidth = weight * boost / k; ctx.stroke();
+  }
+  /* screen-space overlays: end-of-line dots, then borough names */
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.setLineDash([]);
+  const rad = Math.max(2.1, weight * 1.15);
+  /* the dot's white outline lies UNDER its own colour's lines: a white disc first, then that colour's lines are
+     drawn again inside the disc (clipped to it), then the dot. So the line runs into the dot with no white ring
+     between them, and where a service ends part-way along a line that carries on (or beside another line of its
+     colour), that line is not cut by the dot's outline either. */
+  for (const t of hidden.subway ? [] : variants.near.termini) {
+    at([t.x, t.y, t.ax, t.ay, null, t.q]); const sx = atX * k + view.tx, sy = atY * k + view.ty;
+    if (sx < -20 || sx > w + 20 || sy < -20 || sy > h + 20) continue;
+    if (iso && !termIn(t, iso)) continue;
+    ctx.beginPath(); ctx.arc(sx, sy, rad + casing, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.save();
+    ctx.beginPath(); ctx.arc(sx, sy, rad + casing + 0.5, 0, Math.PI * 2); ctx.clip();
+    ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * view.tx, dpr * view.ty); ctx.strokeStyle = t.color;
+    for (const g of groups.values()) if (!g.r.dashed && g.r.color === t.color) { ctx.lineWidth = weight * g.boost / k; for (const p of g.paths) ctx.stroke(p); }
+    ctx.restore();
+    ctx.beginPath(); ctx.arc(sx, sy, rad, 0, Math.PI * 2); ctx.fillStyle = t.color; ctx.fill();
+  }
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = 1;
+  ctx.font = '11px Helvetica, Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (hot && hot.labels && roadAlpha(k)) {
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+    for (const l of hot.labels) {
+      ctx.save(); ctx.translate(l.sx, l.sy); ctx.rotate(l.angle);
+      ctx.lineWidth = 4; ctx.strokeStyle = '#fff'; ctx.strokeText(l.name, 0, -8); ctx.fillStyle = '#000'; ctx.fillText(l.name, 0, -8); ctx.restore();
+    }
+  }
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '1.3px';
+  for (const l of labels) {
+    const sx = l.x * k + view.tx, sy = l.y * k + view.ty;
+    if (sx < -100 || sx > w + 100 || sy < -100 || sy > h + 100) continue;
+    ctx.save(); ctx.translate(sx, sy); ctx.rotate(l.rot);
+    ctx.lineWidth = 4; ctx.strokeStyle = '#fff'; ctx.strokeText(l.text, 0, 0); ctx.fillStyle = '#000'; ctx.fillText(l.text, 0, 0); ctx.restore();
+  }
+}
+
+/* Pan and zoom */
+let frameQueued = false;
+function apply() { if (!frameQueued) { frameQueued = true; requestAnimationFrame(draw); } }
+function draw() {
+  frameQueued = false;
+  const { w, h } = size, keep = Math.min(160, w / 3, h / 3);          /* keep part of the city in the window */
+  view.tx = Math.min(w - keep, Math.max(keep - BOUNDS.w * view.k, view.tx));
+  view.ty = Math.min(h - keep, Math.max(keep - BOUNDS.h * view.k, view.ty));
+  paint();
+  const pad = 45 / view.k, sx0 = -view.tx / view.k - pad, sy0 = -view.ty / view.k - pad, sx1 = (w - view.tx) / view.k + pad, sy1 = (h - view.ty) / view.k + pad;
+  const icon = Math.min(2.1, Math.max(0.42, 0.42 + Math.log2(Math.max(1, view.k / fitK)) * 0.3));   /* icons grow as you zoom in */
+  for (const s of subs) {
+    const on = !subHidden(s.data) && s.x >= sx0 && s.x <= sx1 && s.y >= sy0 && s.y <= sy1;
+    if (on !== s.on) { s.on = on; s.g.style.display = on ? '' : 'none'; }
+    if (on) s.g.setAttribute('transform', `translate(${(s.x * view.k + view.tx).toFixed(1)} ${(s.y * view.k + view.ty).toFixed(1)}) scale(${icon.toFixed(3)})`);
+    if (on && s.lotg) {                                  /* at the closest zoom the icon gives way to its tax lot */
+      const t = s.lot ? snapT(view.k) : 0;
+      if (t !== s.snap || s_snapDirty || t) {
+        s.snap = t; const m = view.k / icon;
+        s.lotg.style.display = t ? '' : 'none'; s.lotg.style.opacity = t; s.ico.style.opacity = 1 - t;
+        if (t) s.lotg.setAttribute('transform', `scale(${m.toFixed(4)})`);
+        if (s.stat) s.stat.setAttribute('transform', t && s.lot ? `translate(${((s.lot.cx - s.x) * m * t).toFixed(2)} ${((s.lot.cy - s.y) * m * t).toFixed(2)})` : '');
+        s.g.classList.toggle('snapped', t > 0.5);
+      }
+    }
+  }
+  s_snapDirty = false;
+  if (view.k >= SNAP_FROM * 0.8) loadSubLots();
+}
+function fit() {
+  const r = svg.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  size = { w: r.width, h: r.height };
+  fitK = Math.min(r.width / BOUNDS.w, r.height / BOUNDS.h) * 0.94;
+  view = { k: fitK, tx: (r.width - BOUNDS.w * fitK) / 2, ty: (r.height - BOUNDS.h * fitK) / 2 };
+  draw();
+}
+function zoomAt(cx, cy, f) {
+  const k = Math.min(Math.max(fitK * 60, MAX_K), Math.max(fitK * 0.8, view.k * f)); f = k / view.k;
+  view.tx = cx - (cx - view.tx) * f; view.ty = cy - (cy - view.ty) * f; view.k = k; apply();
+}
+svg.addEventListener('wheel', ev => { ev.preventDefault(); const r = svg.getBoundingClientRect(); zoomAt(ev.clientX - r.left, ev.clientY - r.top, Math.exp(-ev.deltaY * (ev.ctrlKey ? 0.01 : 0.0018))); }, { passive: false });
+const pointers = new Map(); let moved = false, pinch = 0;
+svg.addEventListener('pointerdown', ev => { if (ev.button) return; pointers.set(ev.pointerId, [ev.clientX, ev.clientY]); moved = false; pinch = 0; });   /* left button / touch only */
+svg.addEventListener('pointermove', ev => {
+  if (!pointers.has(ev.pointerId)) return;
+  if (ev.pointerType === 'mouse' && !ev.buttons) return endPointer(ev);   /* the button was let go where no pointerup reached us (a context menu) */
+  const prev = pointers.get(ev.pointerId); pointers.set(ev.pointerId, [ev.clientX, ev.clientY]);
+  if (pointers.size === 1) {
+    const dx = ev.clientX - prev[0], dy = ev.clientY - prev[1];
+    if (!moved && Math.abs(dx) + Math.abs(dy) < 3) { pointers.set(ev.pointerId, prev); return; }
+    if (!moved) { moved = true; try { svg.setPointerCapture(ev.pointerId); } catch (e) {} svg.classList.add('dragging'); hideTip(); }
+    view.tx += dx; view.ty += dy; apply();
+  } else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), r = svg.getBoundingClientRect();
+    if (pinch) zoomAt((a[0] + b[0]) / 2 - r.left, (a[1] + b[1]) / 2 - r.top, d / pinch);
+    pinch = d; moved = true;
+  }
+});
+const endPointer = ev => { pointers.delete(ev.pointerId); pinch = 0; svg.classList.remove('dragging'); };
+svg.addEventListener('pointerup', endPointer); svg.addEventListener('pointercancel', endPointer);
+/* clicking a line isolates its colour group (or all the els), as clicking it in the legend does */
+let isolateLine = null;                                 /* set by the legend, which owns the isolation */
+svg.addEventListener('click', ev => {
+  if (moved) return;
+  closeSheet();
+  const r = svg.getBoundingClientRect(), hit = routesAt(ev.clientX - r.left, ev.clientY - r.top).filter(i => i[3]);
+  const best = hit.reduce((m, i) => !m || i[4] < m[4] ? i : m, null), route = best && best[3];   /* the line nearest the pointer */
+  if (route && isolateLine) { isolateLine(route.dashed ? { els: true } : { key: route.key, color: route.color }); hideTip(); }
+});
+
+/* Hover labels for routes: find every route within a few pixels of the pointer */
+function routesAt(sx, sy) {
+  const k = view.k, x = (sx - view.tx) / k, y = (sy - view.ty) / k, tol = 5 / k, level = levelFor(k), seen = new Set(), items = [];
+  for (const r of routes) {
+    if (seen.has(r.bullet + r.label) || routeHidden(r) || (isolate && !routeIn(r, isolate))) continue;   /* hidden lines can't be hovered or clicked */
+    search: for (const run of runsOf(r, level)) {
+      if (x < run.x0 - tol || x > run.x1 + tol || y < run.y0 - tol || y > run.y1 + tol) continue;
+      for (let i = 1; i < run.pts.length; i++) { const d = distToSeg(x, y, run.pts[i - 1], run.pts[i]); if (d <= tol) { seen.add(r.bullet + r.label); items.push([r.label, r.color, r.bullet, r, d]); break search; } }
+    }
+  }
+  return items.sort((a, b) => !a[2] - !b[2] || (a[2] || '').localeCompare(b[2] || '') || a[0].localeCompare(b[0]));
+}
+svg.addEventListener('mousemove', ev => {
+  if (pointers.size || ev.target.closest('.sub')) return;
+  const r = svg.getBoundingClientRect(), items = [...routesAt(ev.clientX - r.left, ev.clientY - r.top), ...roadsAt(ev.clientX - r.left, ev.clientY - r.top)];
+  svg.classList.toggle('online', items.some(i => i[3]));
+  if (items.length) showTip(ev, items); else hideTip();
+});
+svg.addEventListener('mouseleave', hideTip);
+
+/* on a window resize keep the current place and zoom; only the first layout fits the whole city */
+new ResizeObserver(() => {
+  const r = svg.getBoundingClientRect(); if (!r.width || !r.height) return;
+  if (!size.w) return fit();
+  const oldFit = fitK; view.tx += (r.width - size.w) / 2; view.ty += (r.height - size.h) / 2;
+  size = { w: r.width, h: r.height }; fitK = Math.min(r.width / BOUNDS.w, r.height / BOUNDS.h) * 0.94;
+  if (Math.abs(view.k - oldFit) < 1e-6) return fit();
+  draw();
+}).observe(svg);
+fit();
+
+/* "still to make" filter (bottom left): only substations whose elevation or hatch photo is missing or incomplete */
+let todo = null;                                        /* null, 'elevation', 'hatch' or 'drawing' (see todoMatch) */
+/* Jesper's own verdict on each finished elevation image ('good' or 'bad'), given in the review album below, keyed by
+   the image file so a new image starts unjudged. A 'bad' one counts as still to do. With serve.py running they are
+   saved in the research folder (General/ELEVATION_REVIEW.json, through /review) and that file is what counts; a
+   copy is kept in this browser (localStorage), which is all there is when the site is served as plain files. */
+const REVIEW_KEY = 'elevationReview'; let review = {}, reviewOnServer = false;
+try { review = JSON.parse(localStorage.getItem(REVIEW_KEY)) || {}; } catch (e) {}
+function saveReview() {
+  try { localStorage.setItem(REVIEW_KEY, JSON.stringify(review)); } catch (e) {}
+  if (!reviewOnServer) return;
+  const list = DATA.substations.filter(d => verdictOf(d)).map(d => ({ name: d.name, image: d.photo.src, verdict: verdictOf(d) }));
+  fetch('review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ updated: new Date().toLocaleDateString('en-CA'), verdicts: review, list }) })
+    .then(r => { reviewSaved(r.ok); }).catch(() => reviewSaved(false));
+}
+let reviewSaved = () => {};                             /* set by the album: shows whether the last save reached the folder */
+fetch('review').then(r => r.ok && (r.headers.get('Content-Type') || '').includes('json') ? r.json() : null).then(b => {
+  if (!b) return;                                       /* no serve.py: browser only */
+  reviewOnServer = true;
+  if (b.verdicts) { review = b.verdicts; try { localStorage.setItem(REVIEW_KEY, JSON.stringify(review)); } catch (e) {} refreshTodo(); }
+  else if (Object.keys(review).length) saveReview();    /* nothing in the folder yet: hand over what this browser has */
+  reviewSaved(true);
+}).catch(() => {});
+const verdictOf = d => (d.photo && review[d.photo.src]) || '';
+const photoDone = d => !!(d.photo && d.photo.complete) && verdictOf(d) !== 'bad';
+const needsPhoto = (d, kind) => (kind === 'elevation' ? d.kind === 'building' : d.kind === 'hatch') && !photoDone(d);
+/* the bottom-left filters: 'elevation' / 'hatch' = photo still to make; 'drawing' = has Jesper's drawn elevation
+   (a PDF with ELEVATION in its name in the substation's DRAWINGS folder, picked up by update_map.sh) */
+const todoMatch = (d, kind) => kind === 'drawing' ? !!d.drawing : needsPhoto(d, kind);
+function applyDim() {
+  for (const s of subs) s.g.classList.toggle('dim', (!!isolate && !subIn(s.data, isolate)) || (!!todo && !todoMatch(s.data, todo)));
+  if (selected >= 0 && subs[selected].g.classList.contains('dim')) closeSheet();   /* its record does not stay open */
+}
+let refreshTodo = () => {};
+(function () {
+  const box = document.getElementById('todo'), counts = [];
+  const setCount = (b, name, n, what) => { b.textContent = n; b.title = `${name}: ${n}. ${what}`; b.setAttribute('aria-label', `${name}: ${n}`); };
+  const mk = (kind, label) => {
+    const b = document.createElement('button');
+    counts.push(() => setCount(b, label, DATA.substations.filter(d => needsPhoto(d, kind)).length, `Click to show only the substations whose ${kind} photo is missing, incomplete or marked bad`));
+    b.onclick = () => { todo = todo === kind ? null : kind; for (const x of box.children) x.classList.toggle('on', x === b && !!todo); applyDim(); };
+    box.appendChild(b);
+  };
+  mk('elevation', 'Elevations to do');   /* hatch images are off the site for now (12 Nov 2026), so no hatch button */
+  const mkDrawn = () => {                               /* only the substations that have a drawn elevation */
+    const b = document.createElement('button');
+    counts.push(() => setCount(b, 'Elevation drawings', DATA.substations.filter(d => d.drawing).length, 'Click to show only the substations that have a drawn elevation'));
+    b.onclick = () => { todo = todo === 'drawing' ? null : 'drawing'; for (const x of box.children) x.classList.toggle('on', x === b && !!todo); applyDim(); };
+    return b;
+  };
+  const drawnBtn = mkDrawn();
+
+  /* Review album: every finished elevation image, to be marked good or bad. Bad ones join "Elevations to do". */
+  const R = document.getElementById('review'), img = R.querySelector('.stage img'), cap = R.querySelector('.cap'), strip = R.querySelector('.strip');
+  const good = R.querySelector('.good'), bad = R.querySelector('.bad'), rb = document.createElement('button');
+  let list = [], at = 0;
+  const done = () => DATA.substations.map((d, i) => ({ d, i })).filter(({ d }) => d.kind === 'building' && d.photo && d.photo.src && d.photo.complete);
+  counts.push(() => setCount(rb, 'Completed elevations', done().filter(({ d }) => verdictOf(d) !== 'bad').length, 'Click to look through the finished elevation images and mark each good or bad'));
+  refreshTodo = () => { counts.forEach(f => f()); if (todo) applyDim(); };
+  let where = '';
+  reviewSaved = ok => { where = !reviewOnServer ? ' · kept in this browser only' : ok ? ' · saved to the research folder' : ' · NOT saved to the folder (is serve.py running?)'; if (R.classList.contains('show')) tally(); };
+  reviewSaved(true);
+  const tally = () => { const g = list.filter(({ d }) => verdictOf(d) === 'good').length, b = list.filter(({ d }) => verdictOf(d) === 'bad').length; R.querySelector('.tally').textContent = `${g} good · ${b} bad · ${list.length - g - b} not looked at${where}`; };
+  const show = n => {
+    at = (n + list.length) % list.length; const { d, i } = list[at], v = verdictOf(d);
+    img.src = d.photo.src; img.alt = d.name;
+    cap.replaceChildren(Object.assign(document.createElement('b'), { textContent: d.name }), document.createElement('br'),
+      document.createTextNode([d.photo.label, d.photo.date].filter(Boolean).join(' · ') + ` · ${at + 1} / ${list.length} · `),
+      Object.assign(document.createElement('a'), { textContent: 'show on the map', onclick: () => { R.classList.remove('show'); view.k = Math.max(view.k, 12); view.tx = size.w / 2 - subs[i].x * view.k; view.ty = size.h / 2 - subs[i].y * view.k; draw(); openSheet(i); } }));
+    good.classList.toggle('on', v === 'good'); bad.classList.toggle('on', v === 'bad');
+    [...strip.children].forEach((f, j) => { const w = verdictOf(list[j].d); f.className = w; f.firstChild.classList.toggle('cur', j === at); });
+    strip.children[at]?.scrollIntoView({ inline: 'center', block: 'nearest' }); tally();
+  };
+  const mark = v => {                                    /* clicking the same verdict again takes it back */
+    const key = list[at].d.photo.src; if (review[key] === v) delete review[key]; else review[key] = v;
+    saveReview(); refreshTodo(); show(at);
+  };
+  rb.onclick = () => {
+    list = done().filter(({ d }) => verdictOf(d) !== 'bad');   /* the ones marked bad earlier are on the to-do list now */
+    if (!list.length) return;
+    strip.replaceChildren(...list.map(({ d }, j) => { const f = document.createElement('figure'), t = Object.assign(document.createElement('img'), { src: d.photo.thumb, alt: d.name, loading: 'lazy' }); t.onclick = () => show(j); f.append(t); return f; }));
+    R.classList.add('show'); show(0);
+  };
+  box.appendChild(rb); box.appendChild(drawnBtn);
+  good.onclick = () => mark('good'); bad.onclick = () => mark('bad');
+  R.querySelector('.prev').onclick = () => show(at - 1); R.querySelector('.next').onclick = () => show(at + 1);
+  R.querySelector('.close').onclick = () => R.classList.remove('show');
+  R.querySelector('.save').onclick = () => {           /* a file the research session can read: which images to redo */
+    const rows = DATA.substations.filter(d => verdictOf(d)).map(d => ({ name: d.name, image: d.photo.src, verdict: verdictOf(d) }));
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify(rows, null, 1)], { type: 'application/json' })), download: 'elevation_review.json' });
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  addEventListener('keydown', ev => {
+    if (!R.classList.contains('show')) return;
+    if (ev.key === 'ArrowLeft') show(at - 1); else if (ev.key === 'ArrowRight') show(at + 1);
+    else if (ev.key === 'g' || ev.key === 'G') mark('good'); else if (ev.key === 'b' || ev.key === 'B') mark('bad');
+    else if (ev.key === 'Escape') { R.classList.remove('show'); ev.stopImmediatePropagation(); }
+    else return;
+    ev.preventDefault();
+  }, true);
+  refreshTodo();
+})();
+
+/* Spreadsheet pop-up */
+const sheet = document.getElementById('sheet'), sheetBody = sheet.querySelector('tbody'), sheetTitle = sheet.querySelector('.ttl');
+let selected = -1;
+function openSheet(i) {
+  closeSheet(); selected = i; const s = subs[i]; s.g.classList.add('sel');
+  sheetTitle.textContent = s.data.name;
+  const d = s.data, srcOf = name => ((d.rows.find(r => r[0] === name) || [])[2]) || [];
+  const coords = d.rows.find(r => r[0] === 'Coordinates');
+  if (coords) coords[2] = [['OpenStreetMap at these coordinates', `https://www.openstreetmap.org/?mlat=${d.lat}&mlon=${d.lon}#map=19/${d.lat}/${d.lon}`]];
+  const rows = [['Status', [[STATUS_LABEL[d.status], d.status === 'unknown' ? 1 : 0]], d.status_src || srcOf('Status')],
+    ['Type', (d.kind === 'building' ? 'Building above ground' : 'Underground vault (hatch)') + (d.lines.length ? '' : '; grey because the line it feeds is not confirmed'), srcOf('Above / below ground')],
+    ...d.rows.filter(r => r[0] !== 'Source')];
+  sheetBody.replaceChildren(...rows.map(r => {
+    const tr = document.createElement('tr');
+    const k = document.createElement('td'); k.className = 'k'; k.textContent = r[0];
+    const v = document.createElement('td'); v.className = 'v';
+    /* values arrive as [text, uncertain?] pieces; uncertain information stays red. With sources, the value links
+       to the first one (new tab) and further sources follow as small numbers */
+    const srcs = r[2] || [];
+    const box = srcs.length ? Object.assign(document.createElement('a'), { className: 'src', href: srcs[0][1], target: '_blank', rel: 'noopener', title: srcs[0][0] + (srcs[0][2] ? ' (' + srcs[0][2] + ')' : '') }) : v;
+    for (const [text, red] of (typeof r[1] === 'string' ? [[r[1], 0]] : r[1])) { const sp = document.createElement('span'); sp.textContent = text; if (red) sp.className = 'unsure'; box.appendChild(sp); }
+    if (box !== v) v.appendChild(box);
+    if (srcs.length > 1) {
+      const sup = document.createElement('sup');
+      srcs.slice(1).forEach((x, j) => sup.appendChild(Object.assign(document.createElement('a'), { href: x[1], target: '_blank', rel: 'noopener', title: x[0] + (x[2] ? ' (' + x[2] + ')' : ''), textContent: '[' + (j + 2) + ']' })));
+      v.appendChild(sup);
+    }
+    tr.append(k, v);
+    return tr;
+  }));
+  sheet.classList.add('show'); sheet.querySelector('.scroll').scrollTop = 0;
+  showPhoto(d);
+}
+/* the photo panel beside the table */
+const photoBox = document.getElementById('photo');
+function showPhoto(d) {
+  /* hatch images are off the site for now: vaults show only the archival-photos button, if they have an album */
+  const noImg = d.kind !== 'building';
+  photoBox.classList.toggle('noimg', noImg);
+  if (noImg && !(d.album && d.album.length)) { photoBox.classList.remove('show'); return; }
+  const p = d.photo || { kind: d.kind === 'building' ? 'elevation' : 'hatch', complete: false };
+  const what = p.kind === 'hatch' ? 'Hatch plan' : 'Front elevation';
+  photoBox.querySelector('header').textContent = noImg ? 'Archival photos' : what + (p.date ? ' · Street View ' + p.date : '');
+  const img = photoBox.querySelector('.img'), cap = photoBox.querySelector('.cap');
+  if (p.src) {
+    const im = Object.assign(document.createElement('img'), { src: p.thumb || p.src, alt: what + ' of ' + d.name, title: 'Open full size', loading: 'lazy' });
+    im.onclick = () => open(p.src, '_blank');
+    img.replaceChildren(im);
+    const note = p.candidate ? 'Candidate only: not confirmed as this substation\u2019s hatch.' : p.complete ? '' : 'Incomplete (' + p.result + '): part of the front is hidden or estimated; see ELEVATION_NOTES.md in the folder.';
+    /* 13 Nov 2026: the grey method line ('Flattened to the wall plane ...') was taken off; only the red warning
+       is left, shown when the elevation is incomplete or the hatch is only a candidate */
+    cap.replaceChildren(Object.assign(document.createElement('span'), { className: 'unsure', textContent: note }));
+    cap.style.display = note ? '' : 'none';
+  } else {
+    img.replaceChildren(Object.assign(document.createElement('div'), { className: 'none', textContent: p.result === 'skipped' ? 'No ' + what.toLowerCase() + ': no usable street view (see the pass log).' : 'No ' + what.toLowerCase() + ' yet.' }));
+    cap.style.display = 'none';
+  }
+  /* archival photos button under the image */
+  /* a drawn elevation (from the folder's DRAWINGS) above the photo */
+  const dr = noImg ? null : d.drawing;
+  photoBox.classList.toggle('hasdrw', !!dr);
+  if (dr) {
+    const di = Object.assign(document.createElement('img'), { src: dr.thumb || dr.src, alt: 'Drawn elevation of ' + d.name, title: 'Open full size' });
+    di.onclick = () => open(dr.src, '_blank');
+    photoBox.querySelector('.dimg').replaceChildren(di);
+  } else photoBox.querySelector('.dimg').replaceChildren();
+  photoBox.querySelector('.albumbtn')?.remove();
+  if (d.album && d.album.length) {
+    const b = Object.assign(document.createElement('button'), { className: 'albumbtn', textContent: `Archival photos (${d.album.length}) ›` });
+    b.onclick = () => openAlbum(d, 0);
+    photoBox.appendChild(b);
+  }
+  photoBox.style.top = sheet.style.top; photoBox.style.maxHeight = sheet.style.maxHeight;
+  photoBox.classList.add('show');
+  for (const i of photoBox.querySelectorAll('img')) i.addEventListener('load', fitPhoto);
+  fitPhoto();
+}
+/* The drawing and photo keep their proportions and shrink together, so the panel never runs past its limit
+   (the window, or its share of it on narrow screens) */
+function fitPhoto() {
+  if (!photoBox.classList.contains('show') || photoBox.classList.contains('inline')) return;
+  const imgs = [...photoBox.querySelectorAll('.dimg img, .img img')].filter(i => i.offsetParent && i.naturalWidth);
+  if (!imgs.length) return;
+  const W = photoBox.clientWidth, cs = getComputedStyle(photoBox), mh = cs.maxHeight;
+  const host = photoBox.offsetParent ? photoBox.offsetParent.clientHeight : innerHeight;
+  let limit = mh.endsWith('%') ? host * parseFloat(mh) / 100 : mh.endsWith('px') ? parseFloat(mh) : host - 32;
+  const top = photoBox.getBoundingClientRect().top - (photoBox.offsetParent ? photoBox.offsetParent.getBoundingClientRect().top : 0);
+  if (cs.bottom === 'auto' || cs.top !== 'auto') limit = Math.min(limit, host - top - 16);
+  imgs.forEach(i => { i.style.maxHeight = '0px'; });          /* measure everything else in the panel */
+  const fixed = photoBox.offsetHeight;
+  const natural = imgs.map(i => Math.min(W, i.naturalWidth) * i.naturalHeight / i.naturalWidth);
+  const f = Math.min(1, Math.max(0, limit - fixed) / natural.reduce((a, b) => a + b, 0));
+  imgs.forEach((i, n) => { i.style.maxHeight = Math.floor(natural[n] * f) + 'px'; });
+}
+addEventListener('resize', fitPhoto);
+/* below 1150 px wide the photo panel moves into the record, under the table */
+const narrowMQ = matchMedia('(max-width: 1150px)'), photoHome = document.getElementById('todo');
+function placePhoto() {
+  const scroll = sheet.querySelector('.scroll');
+  if (narrowMQ.matches) { if (photoBox.parentNode !== scroll) scroll.appendChild(photoBox); photoBox.classList.add('inline'); }
+  else { if (photoBox.parentNode === scroll) photoHome.before(photoBox); photoBox.classList.remove('inline'); fitPhoto(); }
+}
+narrowMQ.addEventListener('change', placePhoto); placePhoto();
+const albumBox = document.getElementById('album'); let albumState = null;
+function openAlbum(d, i) {
+  albumState = { d, i }; albumBox.querySelector('.ttl').textContent = d.name + ' · archival photos, oldest first';
+  const strip = albumBox.querySelector('.strip');
+  strip.replaceChildren(...d.album.map((a, j) => {
+    const f = document.createElement('figure'); const t = Object.assign(document.createElement('img'), { src: a.thumb, alt: a.title, loading: 'lazy' });
+    t.onclick = () => showAlbum(j); f.append(t, Object.assign(document.createElement('figcaption'), { textContent: a.date }));
+    return f;
+  }));
+  albumBox.classList.add('show'); showAlbum(i);
+}
+function showAlbum(i) {
+  const { d } = albumState, n = d.album.length; i = (i + n) % n; albumState.i = i; const a = d.album[i];
+  const im = albumBox.querySelector('.stage img'); im.src = a.src; im.alt = a.title;
+  const cap = albumBox.querySelector('.cap'); cap.replaceChildren();
+  cap.append(Object.assign(document.createElement('b'), { textContent: (a.date ? a.date + ' · ' : '') }), document.createTextNode(a.title || ''), document.createElement('br'));
+  if (a.url) cap.append(Object.assign(document.createElement('a'), { href: a.url, target: '_blank', rel: 'noopener', textContent: a.source || a.url }));
+  else cap.append(document.createTextNode(a.source || ''));
+  if (a.rights) cap.append(document.createTextNode(' · ' + a.rights));
+  if (!a.certain) cap.append(document.createElement('br'), Object.assign(document.createElement('span'), { className: 'unsure', textContent: 'Not certain this shows this substation' + (a.note ? ': ' + a.note : '') }));
+  else if (a.note) cap.append(document.createElement('br'), document.createTextNode(a.note));
+  cap.append(document.createElement('br'), document.createTextNode(`${i + 1} / ${n}`));
+  albumBox.querySelectorAll('.strip img').forEach((t, j) => t.classList.toggle('cur', j === i));
+  albumBox.querySelectorAll('.strip figure')[i]?.scrollIntoView({ inline: 'center', block: 'nearest' });
+}
+albumBox.querySelector('.prev').onclick = () => showAlbum(albumState.i - 1);
+albumBox.querySelector('.next').onclick = () => showAlbum(albumState.i + 1);
+albumBox.querySelector('.close').onclick = () => albumBox.classList.remove('show');
+addEventListener('keydown', ev => {
+  if (!albumBox.classList.contains('show')) return;
+  if (ev.key === 'ArrowLeft') showAlbum(albumState.i - 1); else if (ev.key === 'ArrowRight') showAlbum(albumState.i + 1);
+  else if (ev.key === 'Escape') { albumBox.classList.remove('show'); ev.stopImmediatePropagation(); }
+}, true);
+function closeSheet() { if (selected >= 0) subs[selected].g.classList.remove('sel'); selected = -1; sheet.classList.remove('show'); photoBox.classList.remove('show'); }
+sheet.querySelector('button').onclick = closeSheet;
+addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
+
+/* Legend */
+(function legend() {
+  const L = document.getElementById('legend');
+  const row = (svgInner, text) => `<div class="row"><svg viewBox="-13 -9 26 18">${svgInner}</svg><span>${text}</span></div>`;
+  const icon = (kind, status = 'blank') => { const g = el('g', { class: 'sub' }); drawIcon(g, kind, '#000'); if (ICON_STYLE === 'filled') drawStatus(g, kind, status); return g.innerHTML; };
+  const nKind = k => DATA.substations.filter(s => s.kind === k).length;
+  const nOf = f => DATA.substations.filter(f).length, cnt = v => `<span class="count">${v}</span>`;
+  /* status key: with filled icons, a black square and circle carrying that status's mark; otherwise the dot */
+  const dot = c => ICON_STYLE === 'filled' ? `<g class="sub" transform="translate(-6 0) scale(.85)">${icon('building', c)}</g><g class="sub" transform="translate(6.5 0) scale(.85)">${icon('hatch', c)}</g>`
+    : `<circle class="dot ${c}" cx="0" cy="0" r="4"/>`;
+  const groups = [['1 2 3', '123'], ['4 5 6', '456'], ['7', '7'], ['A C E', 'ACE'], ['B D F M', 'BDFM'], ['G', 'G'], ['J Z', 'JZ'], ['L', 'L'], ['N Q R W', 'NQRW'], ['SIR', 'SIR']];
+  const CO_NAME = { IRT: 'Interborough Rapid Transit Co. (IRT)', BMT: 'Brooklyn–Manhattan Transit Corp. (BMT, earlier BRT)', IND: 'Independent Subway System (IND, city-run)' };
+  L.innerHTML = '<button class="toggle" aria-expanded="true"><span>Legend</span><span class="mark">−</span></button><div class="content"><h4 data-layer="subs">Substations ' + cnt(DATA.substations.length) + '</h4>' +
+    row(`<g class="sub">${icon('building')}</g>`, `Building above ground <span class="count">${nKind('building')}</span>`) + row(`<g class="sub">${icon('hatch')}</g>`, `Underground vault (hatch) <span class="count">${nKind('hatch')}</span>`) + row(`<g class="sub">${icon('building').replaceAll('#000', UNCONFIRMED)}</g>`, `Line fed not confirmed ${cnt(nOf(s => !GROUP_COLOR[s.lines[0]]))}`) +
+    row(dot('on'), `In use ${cnt(nOf(s => s.status === 'on'))}`) + row(dot('off'), `Not in use ${cnt(nOf(s => s.status === 'off'))}`) +
+    row(dot('unknown'), `Status not confirmed ${cnt(nOf(s => s.status === 'unknown'))}`) +
+    '<h4 data-layer="subway">Subway lines</h4><div class="chips">' + groups.map(([t, k]) => `<div class="row hoverable" data-color="${GROUP_COLOR[k]}" data-key="${k}">` + t.split(' ').map(sv => bulletEl(sv, GROUP_COLOR[k]).outerHTML).join('') + '</div>').join('') + '</div>' +
+    '<div class="chips cos">' + ['IRT', 'BMT', 'IND'].map(c => `<div class="row hoverable" data-co="${c}" title="${CO_NAME[c]}">${bulletEl(c, '#000').outerHTML}</div>`).join('') + '</div>' +
+    '<h4 data-layer="els">Demolished elevated lines</h4>' + DATA.els.map(e => row(`<path class="el" stroke="${e.color}" d="M-12 0H12"/>`, e.name.replace(/ \(.*/, '')).replace('class="row"', `class="row hoverable" data-color="${e.color}" data-key="EL"`)).join('') +
+    '<button class="reset">Show all lines</button></div>';
+  /* the selection a legend row stands for: a company, one el (hover) or all els (click), or a colour group */
+  const selOf = (item, click) => item.dataset.co ? { co: item.dataset.co } : item.dataset.key === 'EL' ? (click ? { els: true } : { elColor: item.dataset.color })
+    : { key: item.dataset.key, color: item.dataset.color };
+  const sameSel = (a, b) => !!a && !!b && a.co === b.co && !!a.els === !!b.els && a.key === b.key;
+  /* hovering a legend entry thickens its lines; a company also picks out its substations */
+  const markHover = () => { for (const s of subs) s.g.classList.toggle('hl', !!highlight && !!highlight.co && subIn(s.data, highlight)); };
+  for (const item of L.querySelectorAll('.hoverable')) {
+    item.addEventListener('mouseenter', () => { highlight = selOf(item, false); markHover(); apply(); });
+    item.addEventListener('mouseleave', () => { highlight = null; markHover(); apply(); });
+  }
+  /* hovering one route bullet thickens only the stretch that service runs on */
+  for (const b of L.querySelectorAll('.chips:not(.cos) .bullet')) {
+    b.classList.add('svc'); b.dataset.service = b.textContent;
+    b.addEventListener('mouseenter', () => { highlightSvc = b.dataset.service; apply(); });
+    b.addEventListener('mouseleave', () => { highlightSvc = null; apply(); });
+  }
+  /* while a line is isolated, a small table top left sums up the substations that feed it */
+  const info = document.getElementById('lineinfo'), infoBody = info.querySelector('tbody');
+  const GROUP_NAME = { '123': 'IRT Broadway–7th Ave & Lenox', '456': 'IRT Lexington Ave', '7': 'IRT Flushing', 'ACE': 'IND 8th Ave',
+    'BDFM': 'IND 6th Ave', 'G': 'IND Crosstown', 'JZ': 'BMT Nassau St–Jamaica', 'L': 'BMT Canarsie', 'NQRW': 'BMT Broadway', 'SIR': 'Staten Island Railway' };
+  const showInfo = () => {
+    if (!isolate) { info.classList.remove('show'); sheet.style.top = ''; sheet.style.maxHeight = ''; photoBox.style.top = ''; photoBox.style.maxHeight = ''; fitPhoto(); return; }
+    const feeders = subs.filter(s => subIn(s.data, isolate)).map(s => s.data);
+    const n = f => feeders.filter(f).length;
+    const isEl = !!isolate.els, isCo = !!isolate.co;
+    const groupRow = !isEl && !isCo && L.querySelector(`.chips .row[data-key="${isolate.key}"]`);
+    info.querySelector('.ttl').textContent = isEl ? 'Demolished elevated lines (all)' : isCo ? CO_NAME[isolate.co] : (GROUP_NAME[isolate.key] || isolate.key);
+    info.querySelector('.bullets').replaceChildren(...(isEl ? [] : isCo ? [bulletEl(isolate.co, '#000')]
+      : [...groupRow.querySelectorAll('.bullet')].map(b => bulletEl(b.dataset.service, isolate.color))));
+    const main = d => d.lines.length > 0 && subIn({ ...d, lines: [d.lines[0]] }, isolate);
+    const coNote = { IRT: 'Includes the Manhattan Railway els the IRT ran from 1903.', BMT: 'Includes the Brooklyn els of the BRT/BMT.',
+      IND: 'The IND was built and run by the City, not a private company.' };
+    /* [label, count, row class, status dot] */
+    const rows = [
+      ['Substations feeding it', feeders.length],
+      ['as its main line (icon colour)', n(main), 'sub'],
+      ['as a second line (right half of icon)', n(d => !main(d)), 'sub'],
+      ['Building above ground', n(d => d.kind === 'building')],
+      ['Underground vault (hatch)', n(d => d.kind === 'hatch')],
+      ['In use', n(d => d.status === 'on'), '', 'on'],
+      ['Not in use', n(d => d.status === 'off'), '', 'off'],
+      ['Status not confirmed', n(d => d.status === 'unknown'), '', 'unk'],
+    ];
+    infoBody.innerHTML = rows.map(([k, v, cls, dot]) => `<tr${cls ? ` class="${cls}"` : ''}><td class="k">${k}</td>` +
+      `<td class="v">${dot ? `<span class="dot" style="background: var(--${dot})"></span>` : ''}${v}</td></tr>`).join('') +
+      (isEl ? '<tr class="sub"><td colspan="2" style="color:#555">All the els are shown together: the records do not say which el each substation fed.</td></tr>' : '') +
+      (isCo ? `<tr class="sub"><td colspan="2" style="color:#555">${coNote[isolate.co]}</td></tr>` : '');
+    info.classList.add('show');
+    /* the substation sheet opens below this table rather than on top of it */
+    const h = info.offsetHeight + 24;
+    sheet.style.top = h + 'px'; sheet.style.maxHeight = `calc(100% - ${h + 16}px)`; photoBox.style.top = sheet.style.top; photoBox.style.maxHeight = sheet.style.maxHeight; fitPhoto();
+  };
+  info.querySelector('button').onclick = () => setIsolate(null);
+  /* clicking a line group isolates all its lines with the substations that feed them; click again to undo */
+  const setIsolate = next => {
+    isolate = next;
+    showInfo();
+    L.classList.toggle('isolating', !!isolate);
+    for (const item of L.querySelectorAll('.hoverable')) item.classList.toggle('iso', !!isolate && (isolate.co ? item.dataset.co === isolate.co
+      : isolate.els ? item.dataset.key === 'EL' : !item.dataset.co && item.dataset.key === isolate.key));
+    applyDim();
+    apply();
+  };
+  for (const item of L.querySelectorAll('.hoverable')) item.addEventListener('click', () => {
+    const next = selOf(item, true);
+    setIsolate(sameSel(isolate, next) ? null : next);
+  });
+  /* a route bullet has no click of its own: the records rarely say which single service a substation feeds,
+     so clicking any bullet isolates its whole colour group (the click reaches the row above) */
+  L.querySelector('.reset').onclick = () => setIsolate(null);
+  /* clicking a substation row (building, vault, line not confirmed, in use ...) shows only that group; click again to show all */
+  const SUB_F = [d => d.kind === 'building', d => d.kind === 'hatch', d => !GROUP_COLOR[d.lines[0]],
+    d => d.status === 'on', d => d.status === 'off', d => d.status === 'unknown'];
+  { let n = L.querySelector('h4[data-layer="subs"]').nextElementSibling, i = 0;
+    for (; n && n.classList.contains('row') && i < SUB_F.length; n = n.nextElementSibling, i++) {
+      const f = SUB_F[i], r = n; r.classList.add('subrow'); r.title = 'Click to show only these substations (click again to show all)';
+      r.onclick = () => {
+        subIso = subIso === f ? null : f;
+        for (const x of L.querySelectorAll('.row.subrow')) x.classList.toggle('iso', x === r && !!subIso);
+        if (selected >= 0 && subHidden(subs[selected].data)) closeSheet();
+        for (const s of subs) s.on = null; apply();
+      };
+    } }
+  /* clicking a section title hides or shows that whole layer */
+  for (const h of L.querySelectorAll('h4[data-layer]')) {
+    h.title = 'Click to hide or show';
+    h.onclick = () => {
+      const k = h.dataset.layer; hidden[k] = !hidden[k]; h.classList.toggle('off', hidden[k]);
+      let n = h.nextElementSibling;                       /* grey out the section's rows */
+      while (n && n.tagName !== 'H4' && !n.classList.contains('note')) { n.classList.toggle('layeroff', hidden[k]); n = n.nextElementSibling; }
+      if (k === 'subs' && hidden.subs) closeSheet();
+      for (const s of subs) s.on = null;                  /* make draw() re-show or hide every icon */
+      apply();
+    };
+  }
+  isolateLine = next => setIsolate(sameSel(isolate, next) ? null : next);
+  addEventListener('keydown', ev => { if (ev.key === 'Escape' && isolate && !sheet.classList.contains('show')) setIsolate(null); }, true);   /* capture: runs before Escape closes the sheet, so Escape closes only the sheet first */
+  const btn = L.querySelector('.toggle');
+  const set = closed => { L.classList.toggle('closed', closed); btn.querySelector('.mark').textContent = closed ? '+' : '−'; btn.setAttribute('aria-expanded', String(!closed)); };
+  btn.onclick = () => set(!L.classList.contains('closed'));
+  set(document.getElementById('map').clientWidth < 760);
+})();
+
+window.mapDebug = { fitK: () => fitK, svcRuns, roadsAt, tiles, routes, variants, variantFor, runsOf, levelFor, bundle, routesAt, LOD, draw, subs, openSheet, closeSheet, zoomAt, fit, view: () => view };
+</script>
+<script src="stations.js?v=1"></script>
+<script src="live.js?v=13"></script>
+</body>
+</html>
