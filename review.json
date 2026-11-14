@@ -1,0 +1,223 @@
+{
+ "updated": "2026-11-12",
+ "verdicts": {
+  "photos/69c71d4ccd36_1600.jpg": "good",
+  "photos/6af3d36afc1f_1600.jpg": "good",
+  "photos/6add272993ad_1600.jpg": "good",
+  "photos/8b407779918d_1600.jpg": "good",
+  "photos/7570de12d8a6_1600.jpg": "good",
+  "photos/57f5bb7d368b_1600.jpg": "bad",
+  "photos/91c951f0af2a_1600.jpg": "good",
+  "photos/2c22230801a1_1600.jpg": "good",
+  "photos/f3420849da81_1600.jpg": "good",
+  "photos/9bce70853794_1600.jpg": "good",
+  "photos/33c2ee7fb02c_1600.jpg": "good",
+  "photos/5ac7da0cc6d1_1600.jpg": "good",
+  "photos/84fee9e46c98_1600.jpg": "good",
+  "photos/414f71d6c7c8_1600.jpg": "good",
+  "photos/68f9f20b8d53_1600.jpg": "good",
+  "photos/e952d1d66752_1600.jpg": "good",
+  "photos/a22f78a4c815_1600.jpg": "good",
+  "photos/148ebe88e6db_1600.jpg": "good",
+  "photos/5ae877df59d2_1600.jpg": "good",
+  "photos/86a044a0ee88_1600.jpg": "good",
+  "photos/c6be5dadaeb7_1600.jpg": "good",
+  "photos/df44c257ebf8_1600.jpg": "good",
+  "photos/1e196dadccd2_1600.jpg": "good",
+  "photos/ece3bc6bd405_1600.jpg": "good",
+  "photos/e07f6e533ef6_1600.jpg": "good",
+  "photos/a97240caf070_1600.jpg": "good",
+  "photos/0b15dd8129ec_1600.jpg": "bad",
+  "photos/6d7a33e8121c_1600.jpg": "good",
+  "photos/e3c3f4fd413f_1600.jpg": "good",
+  "photos/40176ca81408_1600.jpg": "good",
+  "photos/206017bdcb09_1600.jpg": "good",
+  "photos/54b7e9ee261b_1600.jpg": "good",
+  "photos/0e3b35eecc19_1600.jpg": "bad",
+  "photos/916b7d5dc79f_1600.jpg": "good",
+  "photos/89a35a229c48_1600.jpg": "bad",
+  "photos/457101f88644_1600.jpg": "good"
+ },
+ "list": [
+  {
+   "name": "Broome-Lafayette Substation (NYCTA; COLP: Lafayette and Broome Substation)",
+   "image": "photos/69c71d4ccd36_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "IRT Substation No. 12",
+   "image": "photos/8b407779918d_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "IRT Substation No. 13",
+   "image": "photos/7570de12d8a6_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "IRT Substation No. 15",
+   "image": "photos/6add272993ad_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "IRT Substation No. 42",
+   "image": "photos/6af3d36afc1f_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Manhattan Railway Co. Substation 7",
+   "image": "photos/57f5bb7d368b_1600.jpg",
+   "verdict": "bad"
+  },
+  {
+   "name": "Manhattan Railway Co. Sub Power Station 2",
+   "image": "photos/9bce70853794_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "IND Substation 409 (Stanton Substation)",
+   "image": "photos/91c951f0af2a_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "IRT Substation No. 40",
+   "image": "photos/33c2ee7fb02c_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "IRT Substation No. 41",
+   "image": "photos/2c22230801a1_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "IRT Substation No. 45 (Jerome-Kingsbridge Substation)",
+   "image": "photos/f3420849da81_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "IRT Substation No. 22 (Nostrand Avenue)",
+   "image": "photos/5ac7da0cc6d1_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Essex Substation (1972 solid-state substation)",
+   "image": "photos/84fee9e46c98_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Jay Street Substation (IND)",
+   "image": "photos/414f71d6c7c8_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Flatbush-Willoughby Substation (BMT)",
+   "image": "photos/68f9f20b8d53_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "4 Avenue - Garfield Place Substation (BMT)",
+   "image": "photos/e952d1d66752_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "BMT 38th Street Substation",
+   "image": "photos/a22f78a4c815_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Avenue T / West 7th Street Substation (BMT)",
+   "image": "photos/148ebe88e6db_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "BRT Substation No. 14 'Flatbush' - Prospect Park Substation (COLP 'Flatbush Emp Blvd. Substation')",
+   "image": "photos/5ae877df59d2_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Brighton Line substation north of Kings Highway (BMT)",
+   "image": "photos/86a044a0ee88_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Avenue O Substation (Culver Line)",
+   "image": "photos/c6be5dadaeb7_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "BMT Substation, Van Sinderen Avenue",
+   "image": "photos/df44c257ebf8_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Gates Avenue-Ridgewood Substation (BMT)",
+   "image": "photos/1e196dadccd2_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Bushwick-Boerum Substation (BMT; FNY 'Bushwick substation')",
+   "image": "photos/ece3bc6bd405_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "BRT Substation No. 17 'Lorimer' (COLP 'NYCT Substation', 145 Lorimer St)",
+   "image": "photos/e07f6e533ef6_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "BMT 64th Street Substation (4th Ave - Sea Beach junction)",
+   "image": "photos/a97240caf070_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "BMT South Sixth Street Substation (Williamsburg)",
+   "image": "photos/0b15dd8129ec_1600.jpg",
+   "verdict": "bad"
+  },
+  {
+   "name": "Corona Yard Substation (OSM \"IRTCO Substation 28\")",
+   "image": "photos/6d7a33e8121c_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Broad Channel Substation (IND Rockaway Line)",
+   "image": "photos/e3c3f4fd413f_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Hamilton Beach Substation (IND Rockaway Line)",
+   "image": "photos/40176ca81408_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Edgemere Substation (IND Rockaway Line)",
+   "image": "photos/206017bdcb09_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "IRT Substation No. 26 (Jackson Ave, LIC)",
+   "image": "photos/54b7e9ee261b_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Queens Plaza Substation (OSM QPS9; 63rd St Line?)",
+   "image": "photos/0e3b35eecc19_1600.jpg",
+   "verdict": "bad"
+  },
+  {
+   "name": "Liberty Substation (Liberty Ave el, Ozone Park)",
+   "image": "photos/916b7d5dc79f_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "Lawrence Substation (NYCT No. 28)",
+   "image": "photos/457101f88644_1600.jpg",
+   "verdict": "good"
+  },
+  {
+   "name": "IND Rockaway Line substation at Pitkin Ave & Hawtree St",
+   "image": "photos/89a35a229c48_1600.jpg",
+   "verdict": "bad"
+  }
+ ]
+}

@@ -282,7 +282,7 @@
   /* ---------- drawing (a canvas of its own over the map's, under the icons) ---------- */
   const cv = document.createElement('canvas'); cv.id = 'trains';
   document.getElementById('canvas').after(cv);
-  const cx = cv.getContext('2d');
+  const screenCx = cv.getContext('2d'); let cx = screenCx;   /* pdf.js draws one frame into its PDF context */
   const dark = c => { const n = parseInt(c.slice(1), 16), f = 0.55; return `rgb(${Math.round((n >> 16) * f)},${Math.round((n >> 8 & 255) * f)},${Math.round((n & 255) * f)})`; };
   const darkOf = new Map();
   const colorOf = svc => { const key = keyOf(svc); if (!darkOf.has(key)) darkOf.set(key, dark(GROUP_COLOR[key] || '#808080')); return darkOf.get(key); };
@@ -448,7 +448,7 @@
     for (const [sx, sy, d] of shownDots) { const e = Math.hypot(sx - mx, sy - my); if (e <= dotR + 3 && (!best || e < best.e)) best = { e, d }; }
     if (best) { showTip(ev, [[best.d.name, '#000'], ['Stops: ' + best.d.rts.replace(/ /g, ', '), '#555']]); ev.currentTarget.classList.add('online'); }
   });
-  function frame(nowMs) {
+  function frame(nowMs, once) {
     const gapS = (nowMs - last) / 1000, dt = Math.min(0.2, gapS); last = nowMs;
     if (gapS > 3) for (const tr of trains.values()) tr.m = null;   /* back from a hidden tab: place everyone afresh */
     const { w, h } = size, dpr = window.devicePixelRatio || 1, k = view.k;
@@ -461,7 +461,7 @@
       /* trains first (their places feed the power view), drawn last */
       const sz = Math.max(0.55, Math.min(1, k / fitK / 6));   /* smaller trains when the whole city is in view */
       const T = Date.now() / 1000, len = weight * 3.0 * sz / k, wd = weight * 1.45 * sz / k;
-      const ta = trainAlpha(k);                              /* trains fade out zoomed out */
+      const ta = hidden.trains ? 0 : trainAlpha(k);         /* trains fade out zoomed out; none when switched off in the legend */
       const byColor = new Map(), live = [];
       for (const tr of trains.values()) {
         const q = step(tr, T, dt); if (!q || !keptBy(tr.svc)) continue;
@@ -565,9 +565,11 @@
       }
       cx.globalAlpha = 1;
     }
-    requestAnimationFrame(frame);
+    if (!once) requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+  /* the PDF export: this frame's trains and station dots, drawn into another context */
+  window.liveRenderTo = target => { cx = target; try { frame(performance.now(), true); } finally { cx = screenCx; } };
 
   /* ---------- reading the feeds ---------- */
   const status = document.createElement('div'); status.id = 'livestatus'; document.getElementById('map').appendChild(status);

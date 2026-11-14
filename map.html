@@ -17,7 +17,7 @@
   #map svg.online { cursor: pointer; }
   #map svg.dragging { cursor: grabbing; }
   #map svg.dragging .sub { pointer-events: none; }
-  .el { fill: none; pointer-events: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 0.1 5; vector-effect: non-scaling-stroke; }
+  .el { fill: none; pointer-events: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 0.1 5.5; vector-effect: non-scaling-stroke; }
   .sub { cursor: pointer; }
   #legend .count { color: #777; font-variant-numeric: tabular-nums; margin-left: 4px; }
   .sub .hit { fill: transparent; }
@@ -69,7 +69,11 @@
   #legend h4 .count { font-weight: normal; }
   #legend h4[data-layer] { cursor: pointer; user-select: none; }
   #legend h4[data-layer]:hover { color: #0000ee; }
-  #legend h4.off { color: #999; text-decoration: line-through; }
+  #legend h4.off, #legend .layerrow.off { color: #999; text-decoration: line-through; }
+  #legend .layerrow { cursor: pointer; user-select: none; }
+  #legend .row.layerrow { margin-top: 8px; }   /* the same gap above as below it (.row sets 3px) */
+  #legend .layerrow:hover { color: #0000ee; }
+  #legend .layerrow.off svg { opacity: 0.35; }
   #legend .layeroff { opacity: 0.35; }
   #legend .row.subrow { cursor: pointer; }
   #legend .row.subrow:hover { background: #f1f1f1; }
@@ -164,10 +168,10 @@
   :is(#album, #review) .strip img.cur { opacity: 1; border-color: #fff; }
   :is(#album, #review) .strip figure { margin: 0; text-align: center; font-size: 10px; color: #ccc; }
   /* bottom left: show only the substations still waiting for their photo */
-  #todo { position: absolute; left: 16px; bottom: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; z-index: 3; font-size: 11px; }   /* stacked (13 Nov 2026) */
+  #todo { position: absolute; left: 16px; bottom: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; z-index: 3; font-size: 11px; }   /* stacked (13 Nov 2026) */
   /* round buttons with just the count (14 Nov 2026); their names are in the hover title */
-  #todo button { font: 12px/1 Helvetica, Arial, sans-serif; border: 1px solid #000; background: #fff; cursor: pointer;
-    width: 32px; height: 32px; padding: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  #todo button { font: 10px/1 Helvetica, Arial, sans-serif; border: 1px solid #000; background: #fff; cursor: pointer;
+    width: 24px; height: 24px; padding: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
   #todo button:hover { background: #f1f1f1; }
   #todo button.on { background: #000; color: #fff; }
   #sheet tr > :first-child { border-left: 0; } #sheet tr > :last-child { border-right: 0; }
@@ -202,6 +206,27 @@
   #trains { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
   #livestatus { position: absolute; right: 16px; top: 16px; z-index: 3; font: 11px Helvetica, Arial, sans-serif; background: #fff;
     border: 1px solid #000; padding: 3px 7px; }
+  /* top right, right of the live status and as tall: save the view as a vector PDF (pdf.js) */
+  #pdfbtn { position: absolute; right: 16px; top: 16px; z-index: 3; width: 22px; height: 22px; padding: 0; box-sizing: border-box;
+    border: 1px solid #000; background: #fff; color: #000; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  #pdfbtn:hover { background: #f1f1f1; } #pdfbtn:disabled { cursor: progress; color: #999; }
+  #livestatus { right: 44px !important; height: 22px; box-sizing: border-box; line-height: 14px; white-space: nowrap; }
+  /* phones: the record and the line summary take the whole width, from the top edge, over everything else (the
+     live status, the legend and the round buttons used to show beside and over them) */
+  @media (max-width: 600px) {
+    /* an 8 px margin all round, so the table's own edges show */
+    #sheet { left: 8px; top: 8px !important; width: calc(100% - 16px); max-height: calc(100% - 16px) !important; z-index: 6; }
+    #lineinfo { left: 8px; top: 8px; width: calc(100% - 16px); z-index: 6; }
+    #sheet th, #sheet td { padding: 5px 8px; }
+    #sheet td.k { width: 32%; }
+    #legend { max-width: calc(100% - 32px); }
+    /* the albums: opaque, so the map's labels do not show through, and the picture as wide as the screen allows */
+    :is(#album, #review) { background: #111; }
+    :is(#album, #review) .stage { gap: 4px; padding: 0 4px; }
+    :is(#album, #review) .stage img { max-width: calc(100% - 64px); }
+    :is(#album, #review) .stage button { font-size: 18px; padding: 6px 7px; }
+    :is(#album, #review) header { flex-wrap: wrap; row-gap: 4px; }
+  }
 </style>
 </head>
 <body>
@@ -215,6 +240,7 @@
     <div class="scroll"><table><tbody></tbody></table></div>
   </div>
   <div id="photo" role="region" aria-label="Elevation photo"><header></header><div class="drw"><div class="lbl"></div><div class="dimg"></div></div><div class="img"></div><div class="cap"></div></div>
+  <button id="pdfbtn" title="Save this view as a vector PDF" aria-label="Save this view as a vector PDF"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 1.5v6.2M3.4 4.1 6 1.5l2.6 2.6M1.8 7.6v2.9h8.4V7.6"/></svg></button>
   <div id="todo" role="group" aria-label="Photos still to make"></div>
   <div id="review" role="dialog" aria-label="Completed elevations"><header><span class="ttl">Completed elevations</span><span class="tally"></span><button class="save" title="Download the list of images marked good or bad, for the research folder">Save list</button><button class="close" aria-label="Close">×</button></header>
     <div class="stage"><button class="prev" aria-label="Previous">‹</button><img alt=""><button class="next" aria-label="Next">›</button></div>
@@ -228,10 +254,27 @@
 </div>
 <div id="tip"></div>
 
-<script src="map-data.js?v=101"></script>
-<script src="map-lines.js?v=10"></script>
+<script src="map-data.js?v=107"></script>
+<script src="map-lines.js?v=11"></script>
 <script>
 const DATA = window.MAP_DATA;
+/* PDF export (pdf.js, the "PDF" button) redraws the view into a stand-in canvas context that writes PDF instead of
+   pixels. Path2D objects cannot be read back, so while PDF_REC.on each one also keeps its own list of drawing steps
+   (in its own coordinates); the rest of the time this costs nothing. A path built from an SVG string keeps the string. */
+const PDF_REC = { on: false };
+{ const P = window.Path2D;
+  window.Path2D = class extends P {
+    constructor(a) { super(a); if (typeof a === 'string') this.svgD = a; else if (a && a.ops) this.ops = a.ops.slice(); }
+    _r(op) { if (PDF_REC.on) (this.ops || (this.ops = [])).push(op); }
+    moveTo(x, y) { super.moveTo(x, y); this._r(['M', x, y]); }
+    lineTo(x, y) { super.lineTo(x, y); this._r(['L', x, y]); }
+    quadraticCurveTo(a, b, x, y) { super.quadraticCurveTo(a, b, x, y); this._r(['Q', a, b, x, y]); }
+    bezierCurveTo(a, b, c, d, x, y) { super.bezierCurveTo(a, b, c, d, x, y); this._r(['C', a, b, c, d, x, y]); }
+    closePath() { super.closePath(); this._r(['Z']); }
+    arc(x, y, r, a0, a1, ccw) { super.arc(x, y, r, a0, a1, ccw); this._r(['A', x, y, r, a0, a1, !!ccw]); }
+    rect(x, y, w, h) { super.rect(x, y, w, h); this._r(['R', x, y, w, h]); }
+  };
+}
 const NS = 'http://www.w3.org/2000/svg';
 const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
 
@@ -308,7 +351,11 @@ function runsOf(route, level, variant) {
       const kept = [];
       for (let i = 0; i < part.length - 1;) {
         let j = i + 1; while (j < part.length - 1 && part[j][2] === part[i][2] && part[j].sk === part[i].sk) j++;
-        const piece = simplify(part.slice(i, j + 1), route.dashed ? 0 : (LOD[level].tol || 0.02));
+        /* map-lines.js comes thinned already, with the same points kept on every line of a shared track: simplifying
+           each line on its own again (as the old linework needed) moved them apart on bends close in, so from level 3
+           (k 8) up it is drawn as it is */
+        const tol = route.dashed ? 0 : window.MAP_LINES ? (level >= 3 ? 0 : LOD[level].tol) : (LOD[level].tol || 0.02);
+        const piece = simplify(part.slice(i, j + 1), tol);
         for (let n = kept.length ? 1 : 0; n < piece.length; n++) kept.push(piece[n]);
         i = j;
       }
@@ -332,7 +379,7 @@ const subCos = d => new Set(d.lines.map(k => k === 'EL' ? (/Manhattan Railway/i.
 /* a legend selection: { key } a colour group, { els } all demolished els, { elColor } one el (hover), { co } a company */
 const routeIn = (r, sel) => sel.co ? r.co === sel.co : sel.els ? !!r.dashed : sel.elColor ? !!r.dashed && r.color === sel.elColor : !r.dashed && r.key === sel.key;
 /* layers switched off by clicking a legend title: substations, subway lines, demolished els */
-const hidden = { subs: false, subway: false, els: false };
+const hidden = { subs: false, subway: false, els: false, trains: false };   /* trains: live.js's trains and the live status, top right */
 const routeHidden = r => r.dashed ? hidden.els : hidden.subway;
 let subIso = null;                                      /* substation legend row clicked: only that group is shown */
 const subHidden = d => hidden.subs || (!!subIso && !subIso(d));
@@ -1214,7 +1261,7 @@ function variantFor(k) {                                  /* makes sure the wide
    at the closest zooms added on 13 Nov 2026 (up to ~8 px per metre) it ate into the white gap and the lines
    overlapped. Beyond LANE_EXTRA_K px per map unit the lane spacing grows by LANE_EXTRA px per doubling of the zoom.
    Used by paint() and by live.js (trains, station dots). */
-const LANE_EXTRA_K = 90, LANE_EXTRA = 2.5;
+const LANE_EXTRA_K = 90, LANE_EXTRA = 0;   /* 0 since 14 Nov: the overlap is fixed at its cause (lines.py keeps shared points; runsOf) */
 const laneExtra = k => Math.max(0, Math.log2(k / LANE_EXTRA_K)) * LANE_EXTRA;
 const ramp = (k, from, full) => { const t = Math.max(0, Math.min(1, (from - k) / (from - full))); return t * t * (3 - 2 * t); };
 
@@ -1307,6 +1354,8 @@ function showTip(ev, items) {
   tip.style.left = Math.min(ev.clientX + 12, innerWidth - w - 6) + 'px'; tip.style.top = Math.min(ev.clientY + 12, innerHeight - h - 6) + 'px';
 }
 const hideTip = () => { tip.style.display = 'none'; };
+const phoneMQ = matchMedia('(max-width: 600px)');
+let collapseLegend = () => {};                          /* set by the legend */
 const subs = DATA.substations.map((s, i) => {
   const [x, y] = px(s.lon, s.lat);
   const g = el('g', { class: 'sub', tabindex: 0, role: 'button', 'aria-label': s.name }, gSubs);
@@ -1387,7 +1436,7 @@ function loadTileIndex() {
    with the status mark at the lot's middle; underground substations keep their icon. */
 const LOTS_V = 1;                                         /* bump when lots/ is rebuilt */
 const MAX_K = 450;                                        /* px per map unit at the closest zoom (about 8 px per metre) */
-const LOTS_FROM = 80, LOTS_FULL = 120, SNAP_FROM = 130, SNAP_FULL = 190;
+const LOTS_FROM = 80, LOTS_FULL = 120, SNAP_FROM = LOTS_FROM, SNAP_FULL = 140;   /* icons start into their lot as soon as lot lines appear */
 const LOT_TILE = 10, LOT_PX = 1.2;                        /* lot line width in px */
 const lotTiles = new Map(); let lotIndex = null, lotIndexAsked = false, subLots = null, subLotsAsked = false;
 const lotAlpha = k => Math.max(0, Math.min(1, (k - LOTS_FROM) / (LOTS_FULL - LOTS_FROM)));
@@ -1405,6 +1454,7 @@ function visibleLots() {
       fetch('lots/' + key + '.json?v=' + LOTS_V).then(r => r.json()).then(rings => {
         const p = new Path2D();
         for (const f of rings) { p.moveTo(f[0], f[1]); for (let i = 2; i < f.length; i += 2) p.lineTo(f[i], f[i + 1]); p.closePath(); }
+        p.rings = rings;                                /* for the PDF export */
         lotTiles.get(key).path = p; apply();
       }).catch(() => lotTiles.delete(key));
     }
@@ -1480,7 +1530,7 @@ function roadsAt(sx, sy) {
 /* The street (or the two streets, at a corner) a substation sits on: the nearest named street, plus any
    other within about 25 m. Only known once the street tiles around it are loaded. */
 let hot = null;                                         /* { sub, names } while a substation is hovered */
-const roadLayer = document.createElement('canvas'), roadCtx = roadLayer.getContext('2d');
+const roadLayer = document.createElement('canvas'); let roadCtx = roadLayer.getContext('2d');   /* let: pdf.js swaps it */
 function streetsOf(sub) {
   if (sub.streets) return sub.streets;
   const near = new Map(); let loaded = false;
@@ -1526,7 +1576,7 @@ function svcRuns(svc, level, variant) {
   return (svcCache[slot] = { color, runs: out });
 }
 /* ---------- Painting ---------- */
-const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
+const canvas = document.getElementById('canvas'); let ctx = canvas.getContext('2d');   /* let: pdf.js swaps it for its PDF context */
 let view = { k: 1, tx: 0, ty: 0 }, fitK = 1, size = { w: 0, h: 0 };
 const levelFor = k => LOD.findIndex(l => k < l.maxK);
 function paint() {
@@ -1730,6 +1780,61 @@ function paint() {
 /* Pan and zoom */
 let frameQueued = false;
 function apply() { if (!frameQueued) { frameQueued = true; requestAnimationFrame(draw); } }
+/* Icons that would overlap on screen are pushed apart until they sit side by side (14 Nov 2026). Worked out in
+   screen pixels for the whole city, once per zoom and set of shown substations, so panning moves nothing. Each
+   overlapping pair is pushed apart along the axis where they overlap least, repeated until none overlap (or 120 rounds); icons
+   start at their true places, so they stay as close to them as the crowd allows. Only crowded icons are worked on. The offsets fade out as the
+   icons give way to their tax lots at the closest zoom. */
+const SPREAD_GAP = 1.2;                                   /* icon units of white between neighbours */
+const iconScale = k => Math.min(2.1, Math.max(0.42, 0.42 + Math.log2(Math.max(1, k / fitK)) * 0.3));   /* icons grow as you zoom in */
+/* zoom rounded to steps of about 1.7 % (40 per doubling): a layout is worked out once per step and kept */
+const spreadStep = k => Math.pow(2, Math.round(Math.log2(k) * 40) / 40);
+const spreadMemo = new Map();
+function spreadVis() { let v = ''; for (const s of subs) v += subHidden(s.data) ? '0' : '1'; return v; }
+function spreadLayout(kq, vis) {                          /* offsets [dx0, dy0, dx1, ...] in pixels at zoom kq */
+  const key = kq + '|' + fitK + '|' + vis, got = spreadMemo.get(key); if (got) return got;   /* icon size depends on fitK too */
+  const icon = iconScale(kq);
+  const D = 2 * (FILLED_HALF + 0.5 + SPREAD_GAP / 2) * icon, n = subs.length, X = new Float64Array(n), Y = new Float64Array(n), live = [];
+  for (let i = 0; i < n; i++) { X[i] = subs[i].x * kq; Y[i] = subs[i].y * kq; if (vis[i] === '1') live.push(i); }
+  const grid = new Map(), cell = i => Math.floor(X[i] / D) * 1048576 + Math.floor(Y[i] / D);
+  /* only crowded icons need work: those with another within a few icon widths (the rest stay put, as obstacles) */
+  for (const i of live) { const c = cell(i), l = grid.get(c); if (l) l.push(i); else grid.set(c, [i]); }
+  const crowd = live.filter(i => { const c0 = cell(i);
+    for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) for (const j of grid.get(c0 + a * 1048576 + b) || []) if (j !== i && Math.hypot(X[j] - X[i], Y[j] - Y[i]) < 2.5 * D) return true;
+    return false; });
+  for (let round = 0; round < 120 && crowd.length; round++) {
+    grid.clear(); let any = false;
+    for (const i of live) { const c = cell(i), l = grid.get(c); if (l) l.push(i); else grid.set(c, [i]); }
+    for (const i of crowd) {
+      const c0 = cell(i);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+        const l = grid.get(c0 + a * 1048576 + b); if (!l) continue;
+        for (const j of l) {
+          if (j === i) continue;
+          /* squares (the round icons fit in the same square): overlapping when closer than D on both axes; pushed
+             apart along the axis where they overlap least, so crowded icons line up side by side */
+          const ex = X[j] - X[i], ey = Y[j] - Y[i], ox = D - Math.abs(ex), oy = D - Math.abs(ey);
+          if (ox <= 0 || oy <= 0) continue;
+          if (ox < oy || (ox === oy && (i + j) % 2)) { const p = ox / 2 * (ex > 0 || (ex === 0 && i < j) ? 1 : -1); X[i] -= p; X[j] += p; }
+          else { const p = oy / 2 * (ey > 0 || (ey === 0 && i < j) ? 1 : -1); Y[i] -= p; Y[j] += p; }
+          any = true;
+        }
+      }
+    }
+    if (!any) break;
+  }
+  const out = new Float64Array(2 * n); for (let i = 0; i < n; i++) { out[2 * i] = X[i] - subs[i].x * kq; out[2 * i + 1] = Y[i] - subs[i].y * kq; }
+  if (spreadMemo.size > 800) spreadMemo.clear();
+  spreadMemo.set(key, out); return out;
+}
+/* after loading, the layouts for the usual zooms are worked out in idle moments, so zooming stays smooth */
+function spreadAhead() {
+  if (!window.requestIdleCallback || !fitK) return;
+  const vis = spreadVis(), todo = [];
+  for (let k = spreadStep(fitK * 0.8); k < fitK * 40; k = spreadStep(k * Math.pow(2, 1 / 40) * 1.0001)) todo.push(k);
+  const work = dl => { while (todo.length && dl.timeRemaining() > 4) spreadLayout(todo.shift(), vis); if (todo.length) requestIdleCallback(work); };
+  requestIdleCallback(work);
+}
 function draw() {
   frameQueued = false;
   const { w, h } = size, keep = Math.min(160, w / 3, h / 3);          /* keep part of the city in the window */
@@ -1737,11 +1842,12 @@ function draw() {
   view.ty = Math.min(h - keep, Math.max(keep - BOUNDS.h * view.k, view.ty));
   paint();
   const pad = 45 / view.k, sx0 = -view.tx / view.k - pad, sy0 = -view.ty / view.k - pad, sx1 = (w - view.tx) / view.k + pad, sy1 = (h - view.ty) / view.k + pad;
-  const icon = Math.min(2.1, Math.max(0.42, 0.42 + Math.log2(Math.max(1, view.k / fitK)) * 0.3));   /* icons grow as you zoom in */
-  for (const s of subs) {
-    const on = !subHidden(s.data) && s.x >= sx0 && s.x <= sx1 && s.y >= sy0 && s.y <= sy1;
+  const icon = iconScale(view.k);
+  const kq = spreadStep(view.k), off = spreadLayout(kq, spreadVis()), fo = (1 - snapT(view.k)) * view.k / kq;   /* side by side, not on top of each other; the offsets fade out as icons snap to their lots */
+  for (let i = 0; i < subs.length; i++) {
+    const s = subs[i], on = !subHidden(s.data) && s.x >= sx0 && s.x <= sx1 && s.y >= sy0 && s.y <= sy1;
     if (on !== s.on) { s.on = on; s.g.style.display = on ? '' : 'none'; }
-    if (on) s.g.setAttribute('transform', `translate(${(s.x * view.k + view.tx).toFixed(1)} ${(s.y * view.k + view.ty).toFixed(1)}) scale(${icon.toFixed(3)})`);
+    if (on) s.g.setAttribute('transform', `translate(${(s.x * view.k + view.tx + off[2 * i] * fo).toFixed(1)} ${(s.y * view.k + view.ty + off[2 * i + 1] * fo).toFixed(1)}) scale(${icon.toFixed(3)})`);
     if (on && s.lotg) {                                  /* at the closest zoom the icon gives way to its tax lot */
       const t = s.lot ? snapT(view.k) : 0;
       if (t !== s.snap || s_snapDirty || t) {
@@ -1827,7 +1933,7 @@ new ResizeObserver(() => {
   if (Math.abs(view.k - oldFit) < 1e-6) return fit();
   draw();
 }).observe(svg);
-fit();
+fit(); spreadAhead();
 
 /* "still to make" filter (bottom left): only substations whose elevation or hatch photo is missing or incomplete */
 let todo = null;                                        /* null, 'elevation', 'hatch' or 'drawing' (see todoMatch) */
@@ -1846,7 +1952,12 @@ function saveReview() {
 }
 let reviewSaved = () => {};                             /* set by the album: shows whether the last save reached the folder */
 fetch('review').then(r => r.ok && (r.headers.get('Content-Type') || '').includes('json') ? r.json() : null).then(b => {
-  if (!b) return;                                       /* no serve.py: browser only */
+  if (!b) {                                             /* no serve.py (a published copy): read the marks frozen with it, if
+                                                           any (review.json), under this browser's own */
+    return fetch('review.json').then(r => r.ok ? r.json() : null).then(f => {
+      if (f && f.verdicts) { review = Object.assign({}, f.verdicts, review); refreshTodo(); }
+    }).catch(() => {});
+  }
   reviewOnServer = true;
   if (b.verdicts) { review = b.verdicts; try { localStorage.setItem(REVIEW_KEY, JSON.stringify(review)); } catch (e) {} refreshTodo(); }
   else if (Object.keys(review).length) saveReview();    /* nothing in the folder yet: hand over what this browser has */
@@ -1936,6 +2047,10 @@ let refreshTodo = () => {};
 const sheet = document.getElementById('sheet'), sheetBody = sheet.querySelector('tbody'), sheetTitle = sheet.querySelector('.ttl');
 let selected = -1;
 function openSheet(i) {
+  /* a tap fires the hover events too, and a phone has no "mouse leaves": clear the hover label and the street
+     labels, and fold the legend away so nothing is left over the record */
+  hideTip(); if (hot) { hot = null; apply(); }
+  if (phoneMQ.matches) collapseLegend();
   closeSheet(); selected = i; const s = subs[i]; s.g.classList.add('sel');
   sheetTitle.textContent = s.data.name;
   const d = s.data, srcOf = name => ((d.rows.find(r => r[0] === name) || [])[2]) || [];
@@ -2090,6 +2205,9 @@ addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
     row(dot('unknown'), `Status not confirmed ${cnt(nOf(s => s.status === 'unknown'))}`) +
     '<h4 data-layer="subway">Subway lines</h4><div class="chips">' + groups.map(([t, k]) => `<div class="row hoverable" data-color="${GROUP_COLOR[k]}" data-key="${k}">` + t.split(' ').map(sv => bulletEl(sv, GROUP_COLOR[k]).outerHTML).join('') + '</div>').join('') + '</div>' +
     '<div class="chips cos">' + ['IRT', 'BMT', 'IND'].map(c => `<div class="row hoverable" data-co="${c}" title="${CO_NAME[c]}">${bulletEl(c, '#000').outerHTML}</div>`).join('') + '</div>' +
+    /* live trains on or off: an ordinary row with a train drawn as on the map, in black (live.js loads after this
+       script, so the row is always there) */
+    row('<path d="M-7 0H7" stroke="#000" stroke-width="4.5" stroke-linecap="round"/>', 'Live subway trains').replace('class="row"', 'class="row layerrow" data-layer="trains"') +
     '<h4 data-layer="els">Demolished elevated lines</h4>' + DATA.els.map(e => row(`<path class="el" stroke="${e.color}" d="M-12 0H12"/>`, e.name.replace(/ \(.*/, '')).replace('class="row"', `class="row hoverable" data-color="${e.color}" data-key="EL"`)).join('') +
     '<button class="reset">Show all lines</button></div>';
   /* the selection a legend row stands for: a company, one el (hover) or all els (click), or a colour group */
@@ -2176,13 +2294,14 @@ addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
       };
     } }
   /* clicking a section title hides or shows that whole layer */
-  for (const h of L.querySelectorAll('h4[data-layer]')) {
+  for (const h of L.querySelectorAll('[data-layer]')) {
     h.title = 'Click to hide or show';
     h.onclick = () => {
       const k = h.dataset.layer; hidden[k] = !hidden[k]; h.classList.toggle('off', hidden[k]);
-      let n = h.nextElementSibling;                       /* grey out the section's rows */
+      let n = h.tagName === 'H4' ? h.nextElementSibling : null;   /* grey out the section's rows (a title only) */
       while (n && n.tagName !== 'H4' && !n.classList.contains('note')) { n.classList.toggle('layeroff', hidden[k]); n = n.nextElementSibling; }
       if (k === 'subs' && hidden.subs) closeSheet();
+      if (k === 'trains') { const ls = document.getElementById('livestatus'); if (ls) ls.style.display = hidden.trains ? 'none' : ''; }
       for (const s of subs) s.on = null;                  /* make draw() re-show or hide every icon */
       apply();
     };
@@ -2191,13 +2310,15 @@ addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
   addEventListener('keydown', ev => { if (ev.key === 'Escape' && isolate && !sheet.classList.contains('show')) setIsolate(null); }, true);   /* capture: runs before Escape closes the sheet, so Escape closes only the sheet first */
   const btn = L.querySelector('.toggle');
   const set = closed => { L.classList.toggle('closed', closed); btn.querySelector('.mark').textContent = closed ? '+' : '−'; btn.setAttribute('aria-expanded', String(!closed)); };
-  btn.onclick = () => set(!L.classList.contains('closed'));
+  btn.onclick = () => { const open = L.classList.contains('closed'); set(!open); if (open && phoneMQ.matches) closeSheet(); };   /* on a phone the legend and a record do not share the screen */
+  collapseLegend = () => set(true);
   set(document.getElementById('map').clientWidth < 760);
 })();
 
 window.mapDebug = { fitK: () => fitK, svcRuns, roadsAt, tiles, routes, variants, variantFor, runsOf, levelFor, bundle, routesAt, LOD, draw, subs, openSheet, closeSheet, zoomAt, fit, view: () => view };
 </script>
 <script src="stations.js?v=1"></script>
-<script src="live.js?v=13"></script>
+<script src="live.js?v=15"></script>
+<script src="pdf.js?v=2"></script>
 </body>
 </html>
