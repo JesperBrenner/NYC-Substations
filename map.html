@@ -55,9 +55,15 @@
   #lineinfo header button { border: 0; background: none; font: 18px/1 Helvetica, Arial, sans-serif; cursor: pointer; padding: 0 4px; }
   #lineinfo header button:hover { color: #0000ee; }
   #lineinfo header { cursor: pointer; } #lineinfo.min table { display: none; }
-  /* the minimize / plus and close marks: drawn 12 px icons, centred in square buttons, the buttons centred in the bar */
-  #lineinfo header .min, #lineinfo header .x { width: 22px; height: 22px; padding: 0; display: flex; align-items: center; justify-content: center; flex: none; align-self: center; }
-  #lineinfo header button svg { display: block; }
+  /* the minimize / plus and close marks in the black title bars (line summary, record, legend): drawn 12 px icons,
+     centred in 22 px squares, the squares centred in the bar; a negative margin keeps the bars their height */
+  /* square buttons as tall as the bar (the negative margin takes back its 3 px padding), the icon 5 px clear of
+     the button's edges. fitIconButtons() (below the legend code) sizes them to the bar: one-line bars 3 px clear
+     above and below the icon (22 px bar: 16 px icon), bars made taller by a two-line title 5 px clear. */
+  .iconbtn { width: 22px; height: 22px; padding: 0 !important; margin: -3px -3px -3px 0; display: flex; align-items: center; justify-content: center;
+    flex: none; align-self: center; border: 0; background: none; cursor: pointer; }
+  #map .iconbtn svg { display: block; width: 12px; height: 12px; pointer-events: none; }   /* #map: beats the map's own '#map svg' (full size, grab cursor) */
+  #legend .mark.iconbtn { color: inherit; }
   #lineinfo table { border-collapse: collapse; width: 100%; }
   #lineinfo td { border-top: 1px solid #000; padding: 4px 7px; vertical-align: top; }
   #lineinfo tr:first-child td { border-top: 0; }
@@ -98,6 +104,9 @@
   .bullet { display: inline-block; box-sizing: border-box; width: 18px; height: 18px; border-radius: 50%; flex: none; vertical-align: middle;
     color: #fff; font: bold 11px/18px Helvetica, Arial, sans-serif; text-align: center; letter-spacing: 0; padding: 0; }
   .bullet.wide { width: auto; padding: 0 6px; border-radius: 9px; font-size: 9px; }
+  /* letters and figures sit in the middle: the line as tall as the bullet, plus a little for the space under the
+     capitals that fonts keep below the baseline */
+  .bullet { line-height: calc(18px + 0.06em); }
   #legend .chips .row { cursor: default; gap: 3px; padding: 1px 2px; }
   #legend .hoverable { cursor: pointer; }
   #legend .row.iso { background: #e2e2e2; box-shadow: inset 2px 0 0 #000; }
@@ -135,7 +144,6 @@
     max-height: calc(100% - 32px); background: #fff; border: 1px solid #000; display: none; flex-direction: column; z-index: 4; }
   #photo.show { display: flex; }
   #photo.noimg .img, #photo.noimg .cap { display: none !important; }
-  #photo.noimg .albumbtn { margin-top: 8px; }
   #photo header { padding: 7px 10px; border-bottom: 1px solid #000; font: 13px "Courier New", Courier, monospace; }
   #sheet header, #photo header { box-sizing: border-box; height: 34px; display: flex; align-items: center; flex: none; }   /* same height title rows */
   /* the drawn elevation (when there is one) sits above the photo; both shrink so the panel never runs past the window */
@@ -147,12 +155,12 @@
   #photo img { display: block; max-width: 100%; width: auto; height: auto; cursor: zoom-in; }   /* heights set by fitPhoto() */
   #photo .cap { flex: none; font-size: 11px; color: #555; padding: 6px 10px; border-top: 1px solid #c9c9c9; }
   #photo .cap .unsure { color: #d0021b; }
-  #photo .none { font-size: 12px; color: #555; padding: 14px 10px; }
+  #photo .none { font-size: 12px; color: #555; padding: 28px 10px; text-align: center; width: 100%; }
   /* narrow screens: the photo panel sits under the table, inside the record's scroll, so one scroll goes table then images */
   #photo.inline { position: static; width: auto; max-height: none !important; border: 0; border-top: 1px solid #000; z-index: auto; }
   #photo.inline img { max-height: none !important; }
   @media (max-width: 1150px) { #sheet header { height: auto; min-height: 34px; } #sheet td { overflow-wrap: anywhere; } }
-  #photo .albumbtn { flex: none; margin: 0 10px 8px; align-self: flex-start; font: 11px Helvetica, Arial, sans-serif; border: 1px solid #000; background: #fff; padding: 3px 8px; cursor: pointer; }
+  #photo .albumbtn { flex: none; margin: 8px 10px; align-self: flex-start; font: 11px Helvetica, Arial, sans-serif; border: 1px solid #000; background: #fff; padding: 3px 8px; cursor: pointer; }
   #photo .albumbtn:hover { background: #000; color: #fff; }
   /* archival photo album, oldest first */
   :is(#album, #review) { position: fixed; inset: 0; background: rgba(0,0,0,.88); z-index: 20; display: none; flex-direction: column; color: #fff; font: 12px Helvetica, Arial, sans-serif; }
@@ -194,7 +202,14 @@
   #lineinfo.min { width: 26px; border: 0; background: #000; }
   #lineinfo.min header { width: 26px; height: 26px; padding: 0; justify-content: center; border: 0; }
   #lineinfo.min header .bullets, #lineinfo.min header .ttl, #lineinfo.min header .x { display: none; }
-  #lineinfo.min header .min { width: 26px; height: 26px; }
+  #lineinfo.min header .min, #sheet.min header .min { width: 26px !important; height: 26px !important; margin: 0; }   /* plus: 3 px clear on every side */
+  #lineinfo.min header .min svg, #sheet.min header .min svg { width: 20px !important; height: 20px !important; }
+  /* the record minimized: the same black square with a plus */
+  #sheet.min { width: 26px !important; max-height: none !important; border: 0; background: #000; }
+  #sheet.min header { width: 26px; height: 26px; padding: 0; justify-content: center; border: 0; }
+  #sheet.min header .ttl, #sheet.min header .x, #sheet.min .scroll { display: none; }
+  #photo.sheetmin { display: none !important; }
+  #sheet header { cursor: pointer; }
   #legend .toggle { width: calc(100% + 24px); margin: -10px -12px 8px; padding-left: 6px; padding-right: 6px; align-items: center; }
   #legend.closed .toggle { margin-bottom: -10px; }
 
@@ -237,7 +252,7 @@
     #legend .row { margin: 1px 0; gap: 5px; } #legend .row.layerrow { margin-top: 5px; }
     #legend svg { width: 20px; height: 11px; }
     #legend .chips { gap: 1px 6px; } #legend .chips.cos { margin-top: 2px; }
-    #legend .bullet { width: 14px; height: 14px; font-size: 8.5px; } #legend .bullet.wide { width: auto; min-width: 14px; padding: 0 3px; }
+    #legend .bullet { width: 14px; height: 14px; font-size: 8.5px; line-height: calc(14px + 0.06em); } #legend .bullet.wide { width: auto; min-width: 14px; padding: 0 3px; }
     #todo { display: none; }
     /* the albums: opaque, so the map's labels do not show through, and the picture as wide as the screen allows */
     :is(#album, #review) { background: #111; }
@@ -252,10 +267,10 @@
 <div id="map">
   <canvas id="canvas"></canvas>
   <svg id="svg" role="img" aria-label="Map of New York City transit substations"><g id="g-subs"></g></svg>
-  <div id="lineinfo" role="region" aria-label="Isolated line"><header><span class="bullets"></span><span class="ttl"></span><button class="min" aria-label="Minimize" title="Minimize: keep the line shown, fold the table away"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M2 6h8"/></svg></button><button class="x" aria-label="Show all lines" title="Show all lines"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg></button></header><table><tbody></tbody></table></div>
+  <div id="lineinfo" role="region" aria-label="Isolated line"><header><span class="bullets"></span><span class="ttl"></span><button class="min iconbtn" aria-label="Minimize" title="Minimize: keep the line shown, fold the table away"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M2 6h8"/></svg></button><button class="x iconbtn" aria-label="Show all lines" title="Show all lines"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg></button></header><table><tbody></tbody></table></div>
   <div id="legend"></div>
   <div id="sheet" role="dialog" aria-label="Substation record">
-    <header><span class="ttl"></span><button aria-label="Close">×</button></header>
+    <header><span class="ttl"></span><button class="min iconbtn" aria-label="Minimize" title="Minimize: fold the record away"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M2 6h8"/></svg></button><button class="x iconbtn" aria-label="Close" title="Close"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg></button></header>
     <div class="scroll"><table><tbody></tbody></table></div>
   </div>
   <div id="photo" role="region" aria-label="Elevation photo"><header></header><div class="drw"><div class="lbl"></div><div class="dimg"></div></div><div class="img"></div><div class="cap"></div></div>
@@ -1359,6 +1374,7 @@ const tip = document.getElementById('tip');
 function bulletEl(service, color) {
   const b = document.createElement('span'); b.className = 'bullet' + (service.length > 1 ? ' wide' : '');
   b.textContent = service; b.style.background = color; if (color === '#FCCC0A') b.style.color = '#000';
+  if (service === '1') b.style.textIndent = '0.11em';   /* the figure 1 sits left in its own width: nudged to the middle */
   return b;
 }
 function showTip(ev, items) {
@@ -1375,6 +1391,16 @@ function showTip(ev, items) {
 const hideTip = () => { tip.style.display = 'none'; };
 const phoneMQ = matchMedia('(max-width: 600px)');
 let collapseLegend = () => {};                          /* set by the legend */
+/* a record, its photo panel or the line summary that comes to overlap the open legend folds it away */
+function foldLegendIfCovered() {
+  const L = document.getElementById('legend'); if (!L || L.classList.contains('closed')) return;
+  const a = L.getBoundingClientRect();
+  for (const id of ['sheet', 'photo', 'lineinfo']) {
+    const e = document.getElementById(id); if (!e || !e.classList.contains('show') || e.classList.contains('inline')) continue;
+    const b = e.getBoundingClientRect();
+    if (b.width && b.left < a.right && a.left < b.right && b.top < a.bottom && a.top < b.bottom) { collapseLegend(); return; }
+  }
+}
 const subs = DATA.substations.map((s, i) => {
   const [x, y] = px(s.lon, s.lat);
   const g = el('g', { class: 'sub', tabindex: 0, role: 'button', 'aria-label': s.name }, gSubs);
@@ -1472,8 +1498,11 @@ function visibleLots() {
       lotTiles.set(key, {});
       fetch('lots/' + key + '.json?v=' + LOTS_V).then(r => r.json()).then(rings => {
         const p = new Path2D();
-        for (const f of rings) { p.moveTo(f[0], f[1]); for (let i = 2; i < f.length; i += 2) p.lineTo(f[i], f[i + 1]); p.closePath(); }
+        let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+        for (const f of rings) { p.moveTo(f[0], f[1]); for (let i = 2; i < f.length; i += 2) p.lineTo(f[i], f[i + 1]); p.closePath();
+          for (let i = 0; i < f.length; i += 2) { bx0 = Math.min(bx0, f[i]); bx1 = Math.max(bx1, f[i]); by0 = Math.min(by0, f[i + 1]); by1 = Math.max(by1, f[i + 1]); } }
         p.rings = rings;                                /* for the PDF export */
+        p.box = [bx0, by0, bx1, by1];                   /* its extent: tiles fetched ahead but off screen are not stroked */
         lotTiles.get(key).path = p; apply();
       }).catch(() => lotTiles.delete(key));
     }
@@ -1550,6 +1579,7 @@ function roadsAt(sx, sy) {
    other within about 25 m. Only known once the street tiles around it are loaded. */
 let hot = null;                                         /* { sub, names } while a substation is hovered */
 const roadLayer = document.createElement('canvas'); let roadCtx = roadLayer.getContext('2d');   /* let: pdf.js swaps it */
+const roadLayerCtx = roadCtx;                             /* the layer's own context (roadCtx is something else during a PDF export) */
 function streetsOf(sub) {
   if (sub.streets) return sub.streets;
   const near = new Map(); let loaded = false;
@@ -1611,8 +1641,12 @@ function paint() {
   if (ra && tileIndex) {
     /* one stroke per width, all the same grey: where streets of different widths meet they merge into one shape.
        Drawn on their own layer and laid on at the fade alpha, so overlapping strokes do not show darker. */
-    if (roadLayer.width !== canvas.width || roadLayer.height !== canvas.height) { roadLayer.width = canvas.width; roadLayer.height = canvas.height; }
-    const rc = roadCtx; rc.setTransform(1, 0, 0, 1, 0, 0); rc.clearRect(0, 0, roadLayer.width, roadLayer.height); rc.setTransform(ctx.getTransform());
+    /* Fully shown (ra 1), they go straight onto the map canvas, which is still empty here: the same pixels without
+       clearing and copying a whole extra canvas every frame. The PDF export always takes the layer (it swaps roadCtx). */
+    const direct = ra === 1 && roadCtx === roadLayerCtx;
+    if (!direct && (roadLayer.width !== canvas.width || roadLayer.height !== canvas.height)) { roadLayer.width = canvas.width; roadLayer.height = canvas.height; }
+    const rc = direct ? ctx : roadCtx;
+    if (!direct) { rc.setTransform(1, 0, 0, 1, 0, 0); rc.clearRect(0, 0, roadLayer.width, roadLayer.height); rc.setTransform(ctx.getTransform()); }
     rc.lineJoin = 'round'; rc.lineCap = 'round'; rc.strokeStyle = '#dcdcdc';
     const byW = new Map();
     for (const t of visibleTiles(true)) for (const r of t.roads) {
@@ -1621,11 +1655,11 @@ function paint() {
       const f = r.flat; p.moveTo(f[0], f[1]); for (let i = 2; i < f.length; i += 2) p.lineTo(f[i], f[i + 1]);
     }
     for (const [wm, p] of byW) { rc.lineWidth = roadPx(wm, k) / k; rc.stroke(p); }
-    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = ra; ctx.drawImage(roadLayer, 0, 0); ctx.restore();
+    if (!direct) { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = ra; ctx.drawImage(roadLayer, 0, 0); ctx.restore(); }
     const la = lotAlpha(k);
     if (la) {                                           /* tax-lot lines: the street grey, thinner */
       ctx.save(); ctx.globalAlpha = la; ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = LOT_PX / k; ctx.lineJoin = 'miter';
-      for (const p of visibleLots()) ctx.stroke(p);
+      for (const p of visibleLots()) if (!p.box || !(p.box[2] < x0 || p.box[0] > x1 || p.box[3] < y0 || p.box[1] > y1)) ctx.stroke(p);
       ctx.restore();
     }
     ctx.globalAlpha = ra;
@@ -1700,7 +1734,16 @@ function paint() {
     }
     atX = x + ax * gap; atY = y + ay * gap;
   } : p => { atX = p[0] + p[2] * gap; atY = p[1] + p[3] * gap; };
-  const hl = highlightSvc ? null : highlight;          /* a single service overrides its whole colour */
+  const traceRun = (path, run) => {                     /* a run as a curve through the midpoints, so corners read as smooth bends */
+    const p = run.pts; at(p[0]); path.moveTo(atX, atY);
+    at(p[1]); let px0 = atX, py0 = atY;
+    for (let i = 2; i < p.length; i++) {
+      at(p[i]); const qx = atX, qy = atY;
+      path.quadraticCurveTo(px0, py0, (px0 + qx) / 2, (py0 + qy) / 2); px0 = qx; py0 = qy;
+    }
+    path.lineTo(px0, py0);
+  };
+  const hl = highlightSvc ? null : highlight;        /* a single service overrides its whole colour */
   const iso = isolate, isHl = r => !!hl && routeIn(r, hl);
   const rank = r => (iso && routeIn(r, iso) ? 1 : 0) + (isHl(r) ? 2 : 0);   /* isolated and hovered lines paint last */
   const order = hl || iso ? [0, 1, 2, 3].flatMap(n => routes.filter(r => rank(r) === n)) : routes;
@@ -1710,19 +1753,12 @@ function paint() {
     /* isolating hides every other line (a hovered legend entry still shows, as a preview) */
     if (iso && !routeIn(r, iso) && !isHl(r)) continue;
     const boost = isHl(r) ? 2.6 : 1;
-    let any = false; const path = new Path2D();
+    const path = new Path2D(); path.runs = [];          /* the runs it holds: the end-of-line dots restroke only those near them */
     for (const run of runsOf(r, level, variant)) {
       if (run.x1 < x0 - slack || run.x0 > x1 + slack || run.y1 < y0 - slack || run.y0 > y1 + slack) continue;
-      any = true; const p = run.pts; at(p[0]); path.moveTo(atX, atY);
-      /* curve through the midpoints so corners read as smooth bends */
-      at(p[1]); let px0 = atX, py0 = atY;
-      for (let i = 2; i < p.length; i++) {
-        at(p[i]); const qx = atX, qy = atY;
-        path.quadraticCurveTo(px0, py0, (px0 + qx) / 2, (py0 + qy) / 2); px0 = qx; py0 = qy;
-      }
-      path.lineTo(px0, py0);
+      path.runs.push(run); traceRun(path, run);
     }
-    if (!any) continue;
+    if (!path.runs.length) continue;
     /* dotted els go under the subway lines; within each, a colour is painted as one group */
     const key = rank(r) + (r.dashed ? 'a' : 'b') + r.color + '|' + boost;
     if (!groups.has(key)) groups.set(key, { r, boost, paths: [] });
@@ -1773,7 +1809,18 @@ function paint() {
     ctx.save();
     ctx.beginPath(); ctx.arc(sx, sy, rad + casing + 0.5, 0, Math.PI * 2); ctx.clip();
     ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * view.tx, dpr * view.ty); ctx.strokeStyle = t.color;
-    for (const g of groups.values()) if (!g.r.dashed && g.r.color === t.color) { ctx.lineWidth = weight * g.boost / k; for (const p of g.paths) ctx.stroke(p); }
+    /* only the runs that come near the dot (the rest lie wholly outside the clip): the same strokes inside it, at a
+       fraction of the cost. Reach: the clip and the line's half width, the widest lane offset, and the morph's slack. */
+    const tX = atX, tY = atY;
+    for (const g of groups.values()) if (!g.r.dashed && g.r.color === t.color) {
+      const reach = slack + 3 * gap + (rad + casing + 1 + weight * g.boost) / k;
+      ctx.lineWidth = weight * g.boost / k;
+      for (const p of g.paths) {
+        let near = null;
+        for (const run of p.runs) if (tX >= run.x0 - reach && tX <= run.x1 + reach && tY >= run.y0 - reach && tY <= run.y1 + reach) traceRun(near || (near = new Path2D()), run);
+        if (near) ctx.stroke(near);
+      }
+    }
     ctx.restore();
     ctx.beginPath(); ctx.arc(sx, sy, rad, 0, Math.PI * 2); ctx.fillStyle = t.color; ctx.fill();
   }
@@ -1810,7 +1857,7 @@ const iconScale = k => Math.min(2.1, Math.max(0.42, 0.42 + Math.log2(Math.max(1,
    so neighbouring steps agree, and the icons are placed between the two steps around the actual zoom, so they glide
    rather than jump as you zoom. */
 const SPREAD_STEPS = 40, SPREAD_EASE = 0.9;              /* an offset carried up a step shrinks to 90 %, so icons drift home when there is room */
-const spreadMemo = new Map();
+const spreadMemo = new Map(); let gSubsT = '';
 function spreadVis() { let v = ''; for (const s of subs) v += subHidden(s.data) ? '0' : '1'; return v; }
 function spreadLayout(step, vis) {                        /* offsets [dx0, dy0, dx1, ...] in pixels at zoom 2^(step / SPREAD_STEPS) */
   const key = step + '|' + fitK + '|' + vis, got = spreadMemo.get(key); if (got) return got;   /* icon size depends on fitK too */
@@ -1868,14 +1915,20 @@ function draw() {
   const icon = iconScale(view.k);
   /* side by side, not on top of each other: between the two layout steps around this zoom; fading out as icons snap to their lots */
   const sp = Math.log2(view.k) * SPREAD_STEPS, s0 = Math.floor(sp), vis = spreadVis(), A = spreadLayout(s0, vis), B = spreadLayout(s0 + 1, vis), tb = sp - s0, fo = 1 - snapT(view.k);
+  /* the pan is one translate on the icons' group; each icon's own place (zoom, spread) is rewritten only when it
+     changes, so dragging the map touches one element instead of every icon */
+  const gt = `translate(${view.tx} ${view.ty})`; if (gt !== gSubsT) { gSubsT = gt; gSubs.setAttribute('transform', gt); }
   for (let i = 0; i < subs.length; i++) {
     const s = subs[i], on = !subHidden(s.data) && s.x >= sx0 && s.x <= sx1 && s.y >= sy0 && s.y <= sy1;
     if (on !== s.on) { s.on = on; s.g.style.display = on ? '' : 'none'; }
-    if (on) s.g.setAttribute('transform', `translate(${(s.x * view.k + view.tx + (A[2 * i] + (B[2 * i] - A[2 * i]) * tb) * fo).toFixed(1)} ${(s.y * view.k + view.ty + (A[2 * i + 1] + (B[2 * i + 1] - A[2 * i + 1]) * tb) * fo).toFixed(1)}) scale(${icon.toFixed(3)})`);
+    if (on) {
+      const tf = `translate(${(s.x * view.k + (A[2 * i] + (B[2 * i] - A[2 * i]) * tb) * fo).toFixed(1)} ${(s.y * view.k + (A[2 * i + 1] + (B[2 * i + 1] - A[2 * i + 1]) * tb) * fo).toFixed(1)}) scale(${icon.toFixed(3)})`;
+      if (tf !== s.tf) { s.tf = tf; s.g.setAttribute('transform', tf); }
+    }
     if (on && s.lotg) {                                  /* at the closest zoom the icon gives way to its tax lot */
       const t = s.lot ? snapT(view.k) : 0;
-      if (t !== s.snap || s_snapDirty || t) {
-        s.snap = t; const m = view.k / icon;
+      if (t !== s.snap || s_snapDirty || (t && s.snapK !== view.k)) {   /* a pan changes none of this */
+        s.snap = t; s.snapK = view.k; const m = view.k / icon;
         s.lotg.style.display = t ? '' : 'none'; s.lotg.style.opacity = t; s.ico.style.opacity = 1 - t;
         if (t) s.lotg.setAttribute('transform', `scale(${m.toFixed(4)})`);
         if (s.stat) s.stat.setAttribute('transform', t && s.lot ? `translate(${((s.lot.cx - s.x) * m * t).toFixed(2)} ${((s.lot.cy - s.y) * m * t).toFixed(2)})` : '');
@@ -2101,8 +2154,9 @@ function openSheet(i) {
     tr.append(k, v);
     return tr;
   }));
-  sheet.classList.add('show'); sheet.querySelector('.scroll').scrollTop = 0;
+  setSheetMin(false); sheet.classList.add('show'); sheet.querySelector('.scroll').scrollTop = 0;
   showPhoto(d);
+  requestAnimationFrame(foldLegendIfCovered);             /* after the photos have been fitted */
 }
 /* the photo panel beside the table */
 const photoBox = document.getElementById('photo');
@@ -2119,13 +2173,16 @@ function showPhoto(d) {
     const im = Object.assign(document.createElement('img'), { src: p.thumb || p.src, alt: what + ' of ' + d.name, title: 'Open full size', loading: 'lazy' });
     im.onclick = () => open(p.src, '_blank');
     img.replaceChildren(im);
-    const note = p.candidate ? 'Candidate only: not confirmed as this substation\u2019s hatch.' : p.complete ? '' : 'Incomplete (' + p.result + '): part of the front is hidden or estimated; see ELEVATION_NOTES.md in the folder.';
+    /* 14 Nov 2026: the red 'Incomplete (partial): ...' line under an unfinished elevation was taken off; only the
+       hatch 'candidate' warning is left (hatch images are off the site for now) */
+    const note = p.candidate ? 'Candidate only: not confirmed as this substation\u2019s hatch.' : '';
     /* 13 Nov 2026: the grey method line ('Flattened to the wall plane ...') was taken off; only the red warning
        is left, shown when the elevation is incomplete or the hatch is only a candidate */
     cap.replaceChildren(Object.assign(document.createElement('span'), { className: 'unsure', textContent: note }));
     cap.style.display = note ? '' : 'none';
   } else {
-    img.replaceChildren(Object.assign(document.createElement('div'), { className: 'none', textContent: p.result === 'skipped' ? 'No ' + what.toLowerCase() + ': no usable street view (see the pass log).' : 'No ' + what.toLowerCase() + ' yet.' }));
+    /* an elevation still to make: said in the grey box where the picture goes */
+    img.replaceChildren(Object.assign(document.createElement('div'), { className: 'none', textContent: 'No Elevation Yet' }));
     cap.style.display = 'none';
   }
   /* archival photos button under the image */
@@ -2164,6 +2221,7 @@ function fitPhoto() {
   const natural = imgs.map(i => Math.min(W, i.naturalWidth) * i.naturalHeight / i.naturalWidth);
   const f = Math.min(1, Math.max(0, limit - fixed) / natural.reduce((a, b) => a + b, 0));
   imgs.forEach((i, n) => { i.style.maxHeight = Math.floor(natural[n] * f) + 'px'; });
+  if (photoBox.classList.contains('show')) foldLegendIfCovered();   /* the panel grew as its pictures loaded */
 }
 addEventListener('resize', fitPhoto);
 /* below 1150 px wide the photo panel moves into the record, under the table */
@@ -2208,7 +2266,18 @@ addEventListener('keydown', ev => {
   else if (ev.key === 'Escape') { albumBox.classList.remove('show'); ev.stopImmediatePropagation(); }
 }, true);
 function closeSheet() { if (selected >= 0) subs[selected].g.classList.remove('sel'); selected = -1; sheet.classList.remove('show'); photoBox.classList.remove('show'); }
-sheet.querySelector('button').onclick = closeSheet;
+sheet.querySelector('.x').onclick = closeSheet;
+/* minimize: the record (and its photo panel) folds to a black square with a plus, where its top left corner was;
+   the plus, or a click on the title bar, opens it again. A newly opened record always opens full. */
+const sheetMin = sheet.querySelector('.min');
+function setSheetMin(m) {
+  sheet.classList.toggle('min', m); photoBox.classList.toggle('sheetmin', m);
+  sheetMin.querySelector('path').setAttribute('d', m ? 'M2 6h8M6 2v8' : 'M2 6h8');
+  sheetMin.title = m ? 'Show the record' : 'Minimize: fold the record away'; sheetMin.setAttribute('aria-label', m ? 'Show the record' : 'Minimize');
+  if (!m) { fitPhoto(); foldLegendIfCovered(); }
+}
+sheetMin.onclick = ev => { ev.stopPropagation(); setSheetMin(!sheet.classList.contains('min')); };
+sheet.querySelector('header').addEventListener('click', ev => { if (!ev.target.closest('button')) sheetMin.click(); });
 addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
 
 /* Legend */
@@ -2223,7 +2292,7 @@ addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
     : `<circle class="dot ${c}" cx="0" cy="0" r="4"/>`;
   const groups = [['1 2 3', '123'], ['4 5 6', '456'], ['7', '7'], ['A C E', 'ACE'], ['B D F M', 'BDFM'], ['G', 'G'], ['J Z', 'JZ'], ['L', 'L'], ['N Q R W', 'NQRW'], ['SIR', 'SIR']];
   const CO_NAME = { IRT: 'Interborough Rapid Transit Co. (IRT)', BMT: 'Brooklyn–Manhattan Transit Corp. (BMT, earlier BRT)', IND: 'Independent Subway System (IND, city-run)' };
-  L.innerHTML = '<button class="toggle" aria-expanded="true"><span>Legend</span><span class="mark">−</span></button><div class="content"><h4 data-layer="subs">Substations ' + cnt(DATA.substations.length) + '</h4>' +
+  L.innerHTML = '<button class="toggle" aria-expanded="true"><span>Legend</span><span class="mark iconbtn"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M2 6h8"/></svg></span></button><div class="content"><h4 data-layer="subs">Substations ' + cnt(DATA.substations.length) + '</h4>' +
     row(`<g class="sub">${icon('building')}</g>`, `Building above ground <span class="count">${nKind('building')}</span>`) + row(`<g class="sub">${icon('hatch')}</g>`, `Underground vault (hatch) <span class="count">${nKind('hatch')}</span>`) + row(`<g class="sub">${icon('building').replaceAll('#000', UNCONFIRMED)}</g>`, `Line fed not confirmed ${cnt(nOf(s => !GROUP_COLOR[s.lines[0]]))}`) +
     row(dot('on'), `In use ${cnt(nOf(s => s.status === 'on'))}`) + row(dot('off'), `Not in use ${cnt(nOf(s => s.status === 'off'))}`) +
     row(dot('unknown'), `Status not confirmed ${cnt(nOf(s => s.status === 'unknown'))}`) +
@@ -2269,8 +2338,6 @@ addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
     /* [label, count, row class, status dot] */
     const rows = [
       ['Substations feeding it', feeders.length],
-      ['as its main line (icon colour)', n(main), 'sub'],
-      ['as a second line (right half of icon)', n(d => !main(d)), 'sub'],
       ['Building above ground', n(d => d.kind === 'building')],
       ['Underground vault (hatch)', n(d => d.kind === 'hatch')],
       ['In use', n(d => d.status === 'on'), '', 'on'],
@@ -2285,6 +2352,7 @@ addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
     /* the substation sheet opens below this table rather than on top of it */
     const h = info.offsetHeight + 24;
     sheet.style.top = h + 'px'; sheet.style.maxHeight = `calc(100% - ${h + 16}px)`; photoBox.style.top = sheet.style.top; photoBox.style.maxHeight = sheet.style.maxHeight; fitPhoto();
+    foldLegendIfCovered();
   };
   info.querySelector('.x').onclick = () => setIsolate(null);
   /* minimize: only the title bar stays, top left, so the line can be seen; the choice holds for the next line clicked */
@@ -2337,16 +2405,35 @@ addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
   isolateLine = next => setIsolate(sameSel(isolate, next) ? null : next);
   addEventListener('keydown', ev => { if (ev.key === 'Escape' && isolate && !sheet.classList.contains('show')) setIsolate(null); }, true);   /* capture: runs before Escape closes the sheet, so Escape closes only the sheet first */
   const btn = L.querySelector('.toggle');
-  const set = closed => { L.classList.toggle('closed', closed); btn.querySelector('.mark').textContent = closed ? '+' : '−'; btn.setAttribute('aria-expanded', String(!closed)); };
+  const set = closed => { L.classList.toggle('closed', closed); btn.querySelector('.mark path').setAttribute('d', closed ? 'M2 6h8M6 2v8' : 'M2 6h8'); btn.setAttribute('aria-expanded', String(!closed)); };
   btn.onclick = () => { const open = L.classList.contains('closed'); set(!open); if (open && phoneMQ.matches) closeSheet(); };   /* on a phone the legend and a record do not share the screen */
   collapseLegend = () => set(true);
   set(document.getElementById('map').clientWidth < 760);
 })();
 
+/* title-bar buttons grow with their bar (see .iconbtn): each bar is watched, and when its height changes the
+   buttons are made that tall and square, with the icon 10 px smaller */
+(function fitIconButtons() {
+  const fit = bar => {
+    /* the bar's height without the buttons: its tallest other content plus its top and bottom padding */
+    const cs = getComputedStyle(bar); let inner = 0;
+    for (const c of bar.children) if (!c.classList.contains('iconbtn') && getComputedStyle(c).display !== 'none') inner = Math.max(inner, c.getBoundingClientRect().height);
+    /* one-line bars: 3 px clear above and below the icon; taller (two-line) bars: 5 px */
+    const h = Math.max(18, Math.round(inner + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom))), icon = h <= 28 ? h - 6 : h - 10;
+    for (const b of bar.querySelectorAll('.iconbtn')) {
+      const sz = h + 'px', isz = icon + 'px';
+      if (b.style.height !== sz) { b.style.width = b.style.height = sz; const v = b.querySelector('svg'); v.style.width = v.style.height = isz; }
+    }
+  };
+  const bars = ['#sheet header', '#lineinfo header', '#legend .toggle'].map(q => document.querySelector(q)).filter(Boolean);
+  const ro = new ResizeObserver(es => es.forEach(e => fit(e.target)));
+  bars.forEach(b => { ro.observe(b); fit(b); });
+})();
+
 window.mapDebug = { fitK: () => fitK, svcRuns, roadsAt, tiles, routes, variants, variantFor, runsOf, levelFor, bundle, routesAt, LOD, draw, subs, openSheet, closeSheet, zoomAt, fit, view: () => view };
 </script>
 <script src="stations.js?v=1"></script>
-<script src="live.js?v=15"></script>
+<script src="live.js?v=18"></script>
 <script src="pdf.js?v=2"></script>
 </body>
 </html>

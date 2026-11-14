@@ -346,6 +346,7 @@
     drawnCache.set(level, byStrand); return byStrand;
   }
   function curveAt(st, pos, gap) {                       /* [x, y]: the lane point at fractional index pos, moved onto the drawn curve */
+    if (!window.laneOff) return curveAtPlain(st, pos, gap);
     const OF = (ax, ay) => window.laneOff ? laneOff(ax, ay, view.k) : [ax, ay];   /* the map's lane offsets, squeezed close in */
     const q = pointAt(st, pos), qo = OF(q[2], q[3]), tx = q[0] + qo[0] * gap, ty = q[1] + qo[1] * gap;
     const list = drawnFor(levelFor(view.k)).get(st);
@@ -367,6 +368,27 @@
       if (!best || d < best[2]) best = [x, y, d];
     }
     return best && best[2] < 0.25 ? [best[0], best[1]] : [tx, ty];   /* more than ~28 m away: not this curve, keep the lane point */
+  }
+  /* the same, when the map has no laneOff (as now): the same sums written out, without two small arrays for every
+     sample looked at (hundreds of thousands per frame with many trains in view, 15 Nov 2026) */
+  function curveAtPlain(st, pos, gap) {
+    const q = pointAt(st, pos), tx = q[0] + q[2] * gap, ty = q[1] + q[3] * gap;
+    const list = drawnFor(levelFor(view.k)).get(st);
+    if (!list || list.length < 2) return [tx, ty];
+    const W = 120; let lo = 0, hi = list.length - 1;
+    { let a = 0, b = hi; while (a < b) { const m = (a + b) >> 1; if (list[m].i < pos - W) a = m + 1; else b = m; } lo = Math.max(0, a - 1); }
+    { let a = lo, b = hi; while (a < b) { const m = (a + b + 1) >> 1; if (list[m].i > pos + W) b = m - 1; else a = m; } hi = Math.min(list.length - 1, a + 1); }
+    let cj = lo, cd = Infinity;
+    for (let j = lo; j <= hi; j += 12) { const A = list[j], dx = A.x + A.ox * gap - tx, dy = A.y + A.oy * gap - ty, d = dx * dx + dy * dy; if (d < cd) { cd = d; cj = j; } }
+    let bx_ = 0, by_ = 0, bd = Infinity, found = false;
+    for (let j = Math.max(lo, cj - 14); j < Math.min(hi, cj + 14); j++) {
+      const A = list[j], B = list[j + 1];
+      const ax = A.x + A.ox * gap, ay = A.y + A.oy * gap, bx = B.x + B.ox * gap, by = B.y + B.oy * gap;
+      const ex = bx - ax, ey = by - ay, L = ex * ex + ey * ey, u = L ? Math.max(0, Math.min(1, ((tx - ax) * ex + (ty - ay) * ey) / L)) : 0;
+      const x = ax + ex * u, y = ay + ey * u, d = (x - tx) * (x - tx) + (y - ty) * (y - ty);
+      if (!found || d < bd) { found = true; bx_ = x; by_ = y; bd = d; }
+    }
+    return found && bd < 0.25 ? [bx_, by_] : [tx, ty];
   }
   function stretch(st, a, b) {                             /* lane points from running length a to b */
     const pa = posAt(st, a), pb = posAt(st, b), out = [pointAt(st, pa)];
@@ -434,6 +456,14 @@
   }
   let last = performance.now(), shownDots = [], dotR = 4, unfed = 0;
   /* a line clicked (or picked in the legend) leaves only its own trains and stations */
+  /* while a line is isolated, a train shows only on the lanes of the isolated lines (an A train rerouted onto the F's
+     track is not shown when the A/C/E are isolated) */
+  let ownerOf = null;
+  const onIsolated = st => {
+    if (!isolate || !st) return true;
+    if (!ownerOf) { ownerOf = new Map(); variants.near.strands.forEach((list, ri) => list.forEach(x => ownerOf.set(x, routes[ri]))); }
+    const r = ownerOf.get(st); return !r || routeIn(r, isolate);
+  };
   const keptBy = svc => {
     const iso = isolate; if (!iso) return true;
     if (iso.els) return false;                             /* only the demolished els are shown */
@@ -448,124 +478,169 @@
     for (const [sx, sy, d] of shownDots) { const e = Math.hypot(sx - mx, sy - my); if (e <= dotR + 3 && (!best || e < best.e)) best = { e, d }; }
     if (best) { showTip(ev, [[best.d.name, '#000'], ['Stops: ' + best.d.rts.replace(/ /g, ', '), '#555']]); ev.currentTarget.classList.add('online'); }
   });
-  function frame(nowMs, once) {
-    const gapS = (nowMs - last) / 1000, dt = Math.min(0.2, gapS); last = nowMs;
-    if (gapS > 3) for (const tr of trains.values()) tr.m = null;   /* back from a hidden tab: place everyone afresh */
+  /* Redrawing only when it shows (15 Nov 2026, for phones). The canvas is left alone while nothing on it can be seen
+     (zoomed out past the trains and the station dots). Otherwise the trains are worked out afresh only as often as a
+     train at full speed moves a quarter of a pixel (every frame close in, a few times a second zoomed out); in between,
+     a pan just paints the last worked-out scene again at the new place (it is worked out for MARGIN px around the
+     window, and afresh once a pan goes past that). */
+  const MARGIN = 96;
+  let lastDraw = 0, blank = true, dotK = null, dotPos = new Map(), scene = null, painted = '';
+  function paintScene(S) {                                 /* the station dots, then the trains (in map units, at the current view) */
     const { w, h } = size, dpr = window.devicePixelRatio || 1, k = view.k;
+    if (S.bars) {
+      cx.globalAlpha = S.sa; cx.lineCap = 'round';
+      /* the white border first under every bar and dot, then the black on top, so borders never cut a neighbour */
+      cx.strokeStyle = '#fff'; cx.lineWidth = 2 * S.rd + 2.4 / k; cx.stroke(S.bars);
+      cx.strokeStyle = '#000'; cx.lineWidth = 2 * S.rd; cx.stroke(S.bars);
+      cx.globalAlpha = 1;
+    }
+    shownDots = S.dotPts.map(([X, Y, d]) => [X * k + view.tx, Y * k + view.ty, d]);   /* window positions, for the hover label */
+    /* trains: a short capsule in the darker line colour, pointing the way it is going */
+    cx.lineCap = 'round'; cx.lineJoin = 'round'; cx.globalAlpha = S.ta;
+    if (S.ta > 0) for (const [c, p] of S.trainPaths) {
+      cx.strokeStyle = '#fff'; cx.lineWidth = S.wd + 2 / k; cx.stroke(p);
+      cx.strokeStyle = c; cx.lineWidth = S.wd; cx.stroke(p);
+    }
+    cx.globalAlpha = 1;
+    painted = w + ',' + h + ',' + dpr + ',' + k + ',' + view.tx + ',' + view.ty;
+  }
+  function clearTo(k) {
+    const { w, h } = size, dpr = window.devicePixelRatio || 1;
     if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
     cx.setTransform(1, 0, 0, 1, 0, 0); cx.clearRect(0, 0, cv.width, cv.height);
-    if (!hidden.subway) {
-      cx.setTransform(dpr * k, 0, 0, dpr * k, dpr * view.tx, dpr * view.ty);
-      const weight = Math.min(4, Math.max(1.5, 1.5 + Math.log2(k / fitK) * 0.5)), casing = Math.max(1, weight * 0.45), gap = (weight + casing + (window.laneExtra ? laneExtra(k) : 0)) / k;   /* same lane spacing as the map */
-      const x0 = -view.tx / k - 2, y0 = -view.ty / k - 2, x1 = (w - view.tx) / k + 2, y1 = (h - view.ty) / k + 2;
-      /* trains first (their places feed the power view), drawn last */
-      const sz = Math.max(0.55, Math.min(1, k / fitK / 6));   /* smaller trains when the whole city is in view */
-      const T = Date.now() / 1000, len = weight * 3.0 * sz / k, wd = weight * 1.45 * sz / k;
-      const ta = hidden.trains ? 0 : trainAlpha(k);         /* trains fade out zoomed out; none when switched off in the legend */
-      const byColor = new Map(), live = [];
-      for (const tr of trains.values()) {
-        const q = step(tr, T, dt); if (!q || !keptBy(tr.svc)) continue;
-        const qo = window.laneOff ? laneOff(q[2], q[3], k) : [q[2], q[3]], X = q[0] + qo[0] * gap, Y = q[1] + qo[1] * gap;
-        live.push([tr, q]);
-        if (X < x0 || X > x1 || Y < y0 || Y > y1) continue;
-        /* the train's body: a short stretch of its own lane centred on it, so it bends with the line on curves */
-        let body = null;
-        if (ta > 0) {
-          /* the lane the train is actually on (carried along its path); searching for the nearest lane is only the
-             fallback, as it can pick a neighbouring lane on the same centreline */
-          let at = null;
-          if (q.st) { const c = cumOf(q.st), i = Math.max(0, Math.min(q.st.length - 2, Math.floor(q.pos))); at = { st: q.st, s: c[i] + (c[i + 1] - c[i]) * (q.pos - i) }; }
-          if (!at) at = laneAt(keyOf(tr.svc), q[0], q[1]);
-          if (!at) for (const k2 of GROUP_KEYS.concat(['SIR'])) { const a2 = laneAt(k2, q[0], q[1]); if (a2 && (!at || a2.d < at.d)) at = a2; }
-          if (at) {
-            /* length: a fixed size on screen (real length, tried on 14 Nov 2026, was far too long close in) */
-            const c = cumOf(at.st), endS = c[c.length - 1], L = len;
-            const s0 = Math.max(0, at.s - L), s1 = Math.min(endS, at.s + L), N = Math.max(10, Math.min(80, Math.ceil((s1 - s0) * k / 6)));
-            body = []; for (let j = 0; j <= N; j++) body.push(curveAt(at.st, posAt(at.st, s0 + (s1 - s0) * j / N), gap));   /* on the drawn curve */
-          }
-        }
-        if (!body) body = [[X - q[4] * len, Y - q[5] * len], [X + q[4] * len, Y + q[5] * len]];
-        const c = colorOf(tr.svc); if (!byColor.has(c)) byColor.set(c, []); byColor.get(c).push(body);
+    cx.setTransform(dpr * k, 0, 0, dpr * k, dpr * view.tx, dpr * view.ty);
+  }
+  function frame(nowMs, once) {
+    const { w, h } = size, dpr = window.devicePixelRatio || 1, k = view.k;
+    if (!once) {
+      const show = !hidden.subway && (powerOn || roadAlpha(k) > 0 || (!hidden.trains && trainAlpha(k) > 0));
+      if (!show) {                                         /* nothing to see: clear once, and leave the trains be (they are placed afresh when they show again) */
+        if (!blank) { cx.setTransform(1, 0, 0, 1, 0, 0); cx.clearRect(0, 0, cv.width, cv.height); blank = true; }
+        shownDots = []; scene = null; painted = ''; last = -Infinity; requestAnimationFrame(frame); return;
       }
-      /* power view. A train draws from the two substations at the ends of the section it is in, one behind it and
-         one ahead: that whole section lights up in the line's colour, and hands over to the next pair as the train
-         passes a substation. With only one of them recorded within reach, the stretch from it to the train lights. */
-      const pa = powerOn ? ta : 0;
-      const feeding = new Set(); unfed = 0;
-      if (pa > 0) {
-        cx.globalAlpha = pa; cx.lineCap = 'round'; cx.lineJoin = 'round';
-        const byKey = new Map(), done = new Set();
-        for (const [tr, q] of live) {
-          let key = keyOf(tr.svc), at = laneAt(key, q[0], q[1]);
-          if (!at) for (const k2 of GROUP_KEYS.concat(['SIR'])) { const a2 = laneAt(k2, q[0], q[1]); if (a2 && (!at || a2.d < at.d)) { at = a2; key = k2; } }   /* on another line's track (e.g. a night 4 on the 3's): that line's sections */
-          if (!at) { unfed++; continue; }
-          const [behind, ahead] = feedersOf(key, at);
-          if (!behind && !ahead) { unfed++; continue; }
-          for (const f of [behind, ahead]) if (f) feeding.add(f.sub);
-          const a = behind ? behind.s : at.s, b = ahead ? ahead.s : at.s;
-          const id = at.st.length + ':' + Math.round(at.st[0][0] * 10) + ':' + key + ':' + Math.round(a * 20) + ':' + Math.round(b * 20);
-          if (done.has(id)) continue; done.add(id);
-          if (!byKey.has(key)) byKey.set(key, new Path2D());
-          const path = byKey.get(key); let first = true;
-          for (const pt of stretch(at.st, a, b)) { const X = pt[0] + pt[2] * gap, Y = pt[1] + pt[3] * gap; if (first) { path.moveTo(X, Y); first = false; } else path.lineTo(X, Y); }
+      const S = scene, fresh = S && !blank && !powerOn && S.k === k && S.w === w && S.h === h && S.dpr === dpr && S.iso === isolate && S.hiddenTrains === !!hidden.trains;
+      if (fresh && nowMs - lastDraw < Math.min(250, 250 / (VMAX * k))) {
+        if (painted === w + ',' + h + ',' + dpr + ',' + k + ',' + view.tx + ',' + view.ty) { requestAnimationFrame(frame); return; }   /* nothing changed */
+        /* panned: the last scene again, if it still covers the window (with the 2-unit margin it was cut to) */
+        if (-view.tx / k - 2 >= S.x0 && (w - view.tx) / k + 2 <= S.x1 && -view.ty / k - 2 >= S.y0 && (h - view.ty) / k + 2 <= S.y1) {
+          clearTo(k); paintScene(S); requestAnimationFrame(frame); return;
         }
-        /* the white border only while the rest of the line is faded: over a full-strength line its ends would cut
-           white nicks across the line where a section stops */
-        cx.lineCap = 'butt';
-        for (const [key, path] of byKey) {
-          if (BASE < 1) { cx.strokeStyle = '#fff'; cx.lineWidth = (weight + 2 * casing) / k; cx.stroke(path); }
-          cx.strokeStyle = GROUP_COLOR[key] || '#888'; cx.lineWidth = weight / k; cx.stroke(path);
-        }
-        cx.globalAlpha = 1;
       }
-      if (powerOn) fadeIcons(feeding, pa, dt);
-      /* stations: black dots with a white outline, shown (fading in) only once the streets appear. Dots that touch
-         (the lanes of several lines side by side at one station) merge into one rounded bar across them. */
-      const sa = roadAlpha(k); shownDots = []; dotR = weight * 1.35;
-      if (sa > 0) {
-        const rd = dotR / k, pts = [];
-        for (const d of dots) {
-          if (!keptBy(d.svc)) continue;
-          const r0 = pointAt(d.st, d.pos); if (r0[0] < x0 - 1 || r0[0] > x1 + 1 || r0[1] < y0 - 1 || r0[1] > y1 + 1) continue;   /* off screen: skip the projection */
-          const [X, Y] = curveAt(d.st, d.pos, gap);         /* on the line as drawn */
-          if (X < x0 || X > x1 || Y < y0 || Y > y1) continue;
-          pts.push([X, Y]);
-          shownDots.push([X * k + view.tx, Y * k + view.ty, d]);   /* window position, for the hover label */
+      lastDraw = nowMs; blank = false;
+    }
+    const gapS = (nowMs - last) / 1000, dt = Math.min(0.2, gapS); last = nowMs;
+    if (gapS > 3) for (const tr of trains.values()) tr.m = null;   /* back from a hidden tab: place everyone afresh */
+    clearTo(k);
+    if (hidden.subway) { cx.setTransform(1, 0, 0, 1, 0, 0); shownDots = []; scene = null; if (!once) requestAnimationFrame(frame); return; }
+    const weight = Math.min(4, Math.max(1.5, 1.5 + Math.log2(k / fitK) * 0.5)), casing = Math.max(1, weight * 0.45), gap = (weight + casing + (window.laneExtra ? laneExtra(k) : 0)) / k;   /* same lane spacing as the map */
+    const mg = once ? 0 : MARGIN / k;                     /* worked out a little beyond the window, for the pans that follow */
+    const x0 = -view.tx / k - 2 - mg, y0 = -view.ty / k - 2 - mg, x1 = (w - view.tx) / k + 2 + mg, y1 = (h - view.ty) / k + 2 + mg;
+    /* trains first (their places feed the power view), drawn last */
+    const sz = Math.max(0.55, Math.min(1, k / fitK / 6));   /* smaller trains when the whole city is in view */
+    const T = Date.now() / 1000, len = weight * 3.0 * sz / k, wd = weight * 1.45 * sz / k;
+    const ta = hidden.trains ? 0 : trainAlpha(k);         /* trains fade out zoomed out; none when switched off in the legend */
+    const byColor = new Map(), live = [];
+    for (const tr of trains.values()) {
+      const q = step(tr, T, dt); if (!q || !keptBy(tr.svc) || !onIsolated(q.st || (tr.m && tr.m.pts && (tr.m.pts.find(p => p.st) || {}).st))) continue;
+      const qo = window.laneOff ? laneOff(q[2], q[3], k) : [q[2], q[3]], X = q[0] + qo[0] * gap, Y = q[1] + qo[1] * gap;
+      live.push([tr, q]);
+      if (X < x0 || X > x1 || Y < y0 || Y > y1) continue;
+      /* the train's body: a short stretch of its own lane centred on it, so it bends with the line on curves */
+      let body = null;
+      if (ta > 0) {
+        /* the lane the train is actually on (carried along its path); searching for the nearest lane is only the
+           fallback, as it can pick a neighbouring lane on the same centreline */
+        let at = null;
+        if (q.st) { const c = cumOf(q.st), i = Math.max(0, Math.min(q.st.length - 2, Math.floor(q.pos))); at = { st: q.st, s: c[i] + (c[i + 1] - c[i]) * (q.pos - i) }; }
+        if (!at) at = laneAt(keyOf(tr.svc), q[0], q[1]);
+        if (!at) for (const k2 of GROUP_KEYS.concat(['SIR'])) { const a2 = laneAt(k2, q[0], q[1]); if (a2 && (!at || a2.d < at.d)) at = a2; }
+        if (at) {
+          /* length: a fixed size on screen (real length, tried on 14 Nov 2026, was far too long close in) */
+          const c = cumOf(at.st), endS = c[c.length - 1], L = len;
+          const s0 = Math.max(0, at.s - L), s1 = Math.min(endS, at.s + L), N = Math.max(10, Math.min(80, Math.ceil((s1 - s0) * k / 6)));
+          body = []; for (let j = 0; j <= N; j++) body.push(curveAt(at.st, posAt(at.st, s0 + (s1 - s0) * j / N), gap));   /* on the drawn curve */
         }
-        /* group dots closer than a dot's width plus a hair (union-find over a coarse grid) */
-        const par = pts.map((_, i) => i), find = i => { while (par[i] !== i) i = par[i] = par[par[i]]; return i; };
-        const lim = 2 * rd + 1 / k, grid = new Map(), cell = lim;
-        pts.forEach(([X, Y], i) => {
-          const gx = Math.floor(X / cell), gy = Math.floor(Y / cell);
-          for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const j of grid.get((gx + dx) + ',' + (gy + dy)) || [])
-            if (Math.hypot(pts[j][0] - X, pts[j][1] - Y) < lim) par[find(i)] = find(j);
-          const key = gx + ',' + gy; if (!grid.has(key)) grid.set(key, []); grid.get(key).push(i);
-        });
-        const groups = new Map(); pts.forEach((p, i) => { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(p); });
-        /* each group: a bar between its two farthest dots (one dot: a bar of no length, i.e. a dot) */
-        const bars = new Path2D();
-        for (const g of groups.values()) {
-          let a = g[0], b = g[0], far = 0;
-          for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) { const d = Math.hypot(g[i][0] - g[j][0], g[i][1] - g[j][1]); if (d > far) { far = d; a = g[i]; b = g[j]; } }
-          bars.moveTo(a[0], a[1]); bars.lineTo(far < 1e-6 ? a[0] + 1e-4 : b[0], b[1]);   /* a lone dot: a bar too short to see */
-        }
-        cx.globalAlpha = sa; cx.lineCap = 'round';
-        /* the white border first under every bar and dot, then the black on top, so borders never cut a neighbour */
-        cx.strokeStyle = '#fff'; cx.lineWidth = 2 * rd + 2.4 / k; cx.stroke(bars);
-        cx.strokeStyle = '#000'; cx.lineWidth = 2 * rd; cx.stroke(bars);
-        cx.globalAlpha = 1;
       }
-      /* trains: a short capsule in the darker line colour, pointing the way it is going */
-      cx.lineCap = 'round'; cx.lineJoin = 'round'; cx.globalAlpha = ta;
-      if (ta > 0) for (const [c, list] of byColor) {
-        const p = new Path2D();
-        for (const body of list) { p.moveTo(body[0][0], body[0][1]); for (let i = 1; i < body.length; i++) p.lineTo(body[i][0], body[i][1]); }
-        cx.strokeStyle = '#fff'; cx.lineWidth = wd + 2 / k; cx.stroke(p);
-        cx.strokeStyle = c; cx.lineWidth = wd; cx.stroke(p);
+      if (!body) body = [[X - q[4] * len, Y - q[5] * len], [X + q[4] * len, Y + q[5] * len]];
+      const c = colorOf(tr.svc); if (!byColor.has(c)) byColor.set(c, []); byColor.get(c).push(body);
+    }
+    /* power view. A train draws from the two substations at the ends of the section it is in, one behind it and
+       one ahead: that whole section lights up in the line's colour, and hands over to the next pair as the train
+       passes a substation. With only one of them recorded within reach, the stretch from it to the train lights. */
+    const pa = powerOn ? ta : 0;
+    const feeding = new Set(); unfed = 0;
+    if (pa > 0) {
+      cx.globalAlpha = pa; cx.lineCap = 'round'; cx.lineJoin = 'round';
+      const byKey = new Map(), done = new Set();
+      for (const [tr, q] of live) {
+        let key = keyOf(tr.svc), at = laneAt(key, q[0], q[1]);
+        if (!at) for (const k2 of GROUP_KEYS.concat(['SIR'])) { const a2 = laneAt(k2, q[0], q[1]); if (a2 && (!at || a2.d < at.d)) { at = a2; key = k2; } }   /* on another line's track (e.g. a night 4 on the 3's): that line's sections */
+        if (!at) { unfed++; continue; }
+        const [behind, ahead] = feedersOf(key, at);
+        if (!behind && !ahead) { unfed++; continue; }
+        for (const f of [behind, ahead]) if (f) feeding.add(f.sub);
+        const a = behind ? behind.s : at.s, b = ahead ? ahead.s : at.s;
+        const id = at.st.length + ':' + Math.round(at.st[0][0] * 10) + ':' + key + ':' + Math.round(a * 20) + ':' + Math.round(b * 20);
+        if (done.has(id)) continue; done.add(id);
+        if (!byKey.has(key)) byKey.set(key, new Path2D());
+        const path = byKey.get(key); let first = true;
+        for (const pt of stretch(at.st, a, b)) { const X = pt[0] + pt[2] * gap, Y = pt[1] + pt[3] * gap; if (first) { path.moveTo(X, Y); first = false; } else path.lineTo(X, Y); }
+      }
+      /* the white border only while the rest of the line is faded: over a full-strength line its ends would cut
+         white nicks across the line where a section stops */
+      cx.lineCap = 'butt';
+      for (const [key, path] of byKey) {
+        if (BASE < 1) { cx.strokeStyle = '#fff'; cx.lineWidth = (weight + 2 * casing) / k; cx.stroke(path); }
+        cx.strokeStyle = GROUP_COLOR[key] || '#888'; cx.lineWidth = weight / k; cx.stroke(path);
       }
       cx.globalAlpha = 1;
     }
-    if (!once) requestAnimationFrame(frame);
+    if (powerOn) fadeIcons(feeding, pa, dt);
+    /* stations: black dots with a white outline, shown (fading in) only once the streets appear. Dots that touch
+       (the lanes of several lines side by side at one station) merge into one rounded bar across them. */
+    const sa = roadAlpha(k); dotR = weight * 1.35;
+    const rd = dotR / k, dotPts = []; let bars = null;
+    if (sa > 0) {
+      const pts = [];
+      if (dotK !== k) { dotK = k; dotPos = new Map(); }   /* a dot's place depends only on the zoom: kept while panning */
+      for (const d of dots) {
+        if (!keptBy(d.svc)) continue;
+        let P = dotPos.get(d);
+        if (!P) {
+          const r0 = pointAt(d.st, d.pos); if (r0[0] < x0 - 1 || r0[0] > x1 + 1 || r0[1] < y0 - 1 || r0[1] > y1 + 1) continue;   /* off screen: skip the projection */
+          dotPos.set(d, P = curveAt(d.st, d.pos, gap));   /* on the line as drawn */
+        }
+        const X = P[0], Y = P[1];
+        if (X < x0 || X > x1 || Y < y0 || Y > y1) continue;
+        pts.push([X, Y]); dotPts.push([X, Y, d]);
+      }
+      /* group dots closer than a dot's width plus a hair (union-find over a coarse grid) */
+      const par = pts.map((_, i) => i), find = i => { while (par[i] !== i) i = par[i] = par[par[i]]; return i; };
+      const lim = 2 * rd + 1 / k, grid = new Map(), cell = lim;
+      pts.forEach(([X, Y], i) => {
+        const gx = Math.floor(X / cell), gy = Math.floor(Y / cell);
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const j of grid.get((gx + dx) + ',' + (gy + dy)) || [])
+          if (Math.hypot(pts[j][0] - X, pts[j][1] - Y) < lim) par[find(i)] = find(j);
+        const key = gx + ',' + gy; if (!grid.has(key)) grid.set(key, []); grid.get(key).push(i);
+      });
+      const groups = new Map(); pts.forEach((p, i) => { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(p); });
+      /* each group: a bar between its two farthest dots (one dot: a bar of no length, i.e. a dot) */
+      bars = new Path2D();
+      for (const g of groups.values()) {
+        let a = g[0], b = g[0], far = 0;
+        for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) { const d = Math.hypot(g[i][0] - g[j][0], g[i][1] - g[j][1]); if (d > far) { far = d; a = g[i]; b = g[j]; } }
+        bars.moveTo(a[0], a[1]); bars.lineTo(far < 1e-6 ? a[0] + 1e-4 : b[0], b[1]);   /* a lone dot: a bar too short to see */
+      }
+    }
+    const trainPaths = [];
+    if (ta > 0) for (const [c, list] of byColor) {
+      const p = new Path2D();
+      for (const body of list) { p.moveTo(body[0][0], body[0][1]); for (let i = 1; i < body.length; i++) p.lineTo(body[i][0], body[i][1]); }
+      trainPaths.push([c, p]);
+    }
+    const S = { k, w, h, dpr, iso: isolate, hiddenTrains: !!hidden.trains, x0, y0, x1, y1, sa, rd, bars, dotPts, ta, wd, trainPaths };
+    paintScene(S);
+    if (!once) { scene = S; requestAnimationFrame(frame); }
   }
   requestAnimationFrame(frame);
   /* the PDF export: this frame's trains and station dots, drawn into another context */
